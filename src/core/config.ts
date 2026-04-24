@@ -53,9 +53,20 @@ export interface AerodromeConfig {
 export function loadConfig(yamlPath: string, envPath: string): AppConfig {
   loadDotenv({ path: envPath, override: false })
 
-  const raw = readFileSync(yamlPath, 'utf8')
+  let raw: string
+  try {
+    raw = readFileSync(yamlPath, 'utf8')
+  } catch (err) {
+    throw new Error(`Cannot read config file at ${yamlPath}: ${(err as Error).message}`)
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const y = parse(raw) as any
+  let y: any
+  try {
+    y = parse(raw)
+  } catch (err) {
+    throw new Error(`Invalid YAML in ${yamlPath}: ${(err as Error).message}`)
+  }
 
   const secrets = {
     coingeckoApiKey: requireEnv('DM_COINGECKO_API_KEY'),
@@ -71,8 +82,17 @@ export function loadConfig(yamlPath: string, envPath: string): AppConfig {
       logLevel: (process.env['DM_GLOBAL_LOG_LEVEL'] ?? y.global.log_level) as string,
     },
     sources: {
-      coingecko: y.sources.coingecko,
-      debank: y.sources.debank,
+      coingecko: {
+        baseUrl: y.sources.coingecko.base_url,
+        rateLimitPerMinute: y.sources.coingecko.rate_limit_per_minute,
+        timeoutMs: y.sources.coingecko.timeout_ms,
+        retryAttempts: y.sources.coingecko.retry_attempts,
+      },
+      debank: {
+        baseUrl: y.sources.debank.base_url,
+        timeoutMs: y.sources.debank.timeout_ms,
+        retryAttempts: y.sources.debank.retry_attempts,
+      },
       rpc: { base: { url: process.env['DM_RPC_BASE_URL'] ?? y.sources.rpc.base.url, timeoutMs: y.sources.rpc.base.timeout_ms, retryAttempts: y.sources.rpc.base.retry_attempts } },
     },
     notifications: {
