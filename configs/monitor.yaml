@@ -1,0 +1,111 @@
+# Environment variable prefix: DM_
+# Any value can be overridden via env var with DM_ prefix + SCREAMING_SNAKE_CASE key path
+# e.g., DM_GLOBAL_DRY_RUN=false overrides global.dry_run
+
+global:
+  dry_run: true
+  log_level: "info"   # debug | info | warn | error
+
+sources:
+  coingecko:
+    base_url: "https://pro-api.coingecko.com/api/v3"
+    rate_limit_per_minute: 500
+    timeout_ms: 10000
+    retry_attempts: 3
+  debank:
+    base_url: "https://pro-openapi.debank.com/v1"
+    timeout_ms: 15000
+    retry_attempts: 3
+  rpc:
+    base:
+      url: "https://mainnet.base.org"
+      timeout_ms: 10000
+      retry_attempts: 3
+
+notifications:
+  serverchan:
+    enabled: true
+    timeout_ms: 5000
+    retry_attempts: 5
+  email:
+    enabled: true
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from: "defi-monitor@gmail.com"
+    to:
+      - "your@email.com"
+    retry_attempts: 5
+    daily_summary_hour: 9
+  healthchecks:
+    enabled: true
+    interval_seconds: 60
+
+protocols:
+  aerodrome_msusd_usdc:
+    enabled: true
+    chain: "base"
+    chain_id: 8453
+
+    # Find these on Basescan / Aerodrome UI
+    pool_address: "FILL_IN"              # Aerodrome msUSD/USDC pool
+    gauge_address: "FILL_IN"             # Gauge contract for staking LP NFT
+    msusd_address: "FILL_IN"             # msUSD token on Base
+    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # USDC on Base
+    router_address: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"  # Aerodrome Router v2
+    position_manager_address: "0x827922686190790b37229fd06084350E74485b72"  # Aerodrome NonfungiblePositionManager
+
+    # Your LP NFT token ID (from Aerodrome UI or Basescan)
+    lp_token_id: 0
+
+    # Metronome team/treasury wallets (for insider exit detection)
+    team_wallets: []
+
+    polling:
+      price_ms: 10000       # 10s — CoinGecko price
+      pool_ms: 30000        # 30s — pool reserves + buys/sells
+      supply_ms: 60000      # 60s — totalSupply via RPC
+      position_ms: 60000    # 60s — your position value via DeBank
+      protocol_ms: 120000   # 2min — Metronome protocol TVL
+      team_wallets_ms: 120000  # 2min — team wallet holdings
+
+    alerts:
+      depeg:
+        price_threshold: 0.992      # CoinGecko price below this triggers
+        twap_threshold: 0.992       # On-chain TWAP below this confirms
+        pool_imbalance_pct: 75      # msUSD ratio in pool > 75% confirms
+        sustained_seconds: 180      # Must persist 3min before RED
+        required_confirmations: 3   # All 3 sources must confirm
+
+      hack_mint:
+        supply_increase_pct: 15     # totalSupply +15% in window
+        supply_window_seconds: 3600
+        price_drop_pct: 2
+        sells_spike_multiplier: 5
+
+      liquidity_drain:
+        tvl_drop_pct: 30
+        tvl_window_seconds: 3600
+        pool_msusd_ratio_pct: 70
+        sells_buys_ratio: 3
+
+      insider_exit:
+        large_outflow_usd: 50000
+        price_drop_pct: 1
+
+      position_drop:
+        drop_pct: 10
+        window_seconds: 3600
+
+    execution:
+      swap_batch_count: 3
+      swap_slippage_bps: 100    # 1%
+      gas_multiplier: 1.2
+      deadline_seconds: 300
+      max_gas_gwei: 50
+
+storage:
+  sqlite_path: "data/monitor.db"
+  retention_days:
+    price_history: 30
+    pool_snapshots: 30
+    health_snapshots: 7
