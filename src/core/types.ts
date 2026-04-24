@@ -1,6 +1,15 @@
 // src/core/types.ts
 // Central contract for the entire system. All interfaces and enums live here.
 // Other modules import from this file. This file imports nothing from the project.
+//
+// NOTE: tsconfig has exactOptionalPropertyTypes enabled.
+// Optional fields (e.g. txHash?: string) must be OMITTED, not set to undefined.
+// Use conditional spreading: { ...(txHash != null && { txHash }) }
+//
+// NOTE: ExecutionOrder.params is an untagged union narrowed by order.type.
+// Consumers must switch on order.type and use type assertions (e.g., params as UnstakeParams).
+// This is an accepted design tradeoff — the type+params pairing is enforced at the
+// order generation layer (orders.ts), not at the type level.
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
