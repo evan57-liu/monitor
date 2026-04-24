@@ -4,3 +4,4 @@ data/
 configs/.env
 *.env
 !configs/.env.example
+logs/

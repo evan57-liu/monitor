@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.defi.monitor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/57block/.nvm/versions/node/v22.21.1/bin/node</string>
+    <string>/Users/57block/web3project/monitor/dist/main.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/57block/web3project/monitor</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+
+  <!-- Restart immediately if process exits (crash recovery) -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Wait 10s before restarting after crash -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- Start automatically on login/boot -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Log output -->
+  <key>StandardOutPath</key>
+  <string>/Users/57block/web3project/monitor/logs/stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/57block/web3project/monitor/logs/stderr.log</string>
+</dict>
+</plist>
