@@ -8,7 +8,7 @@ import type { AerodromeConfig } from '../../core/config.js'
 // Minimal config for tests
 const cfg = {
   alerts: {
-    depeg: { priceThreshold: 0.992, twapThreshold: 0.992, poolImbalancePct: 75, sustainedSeconds: 180, requiredConfirmations: 3 },
+    depeg: { priceThreshold: 0.992, twapThreshold: 0.992, poolImbalancePct: 75, sustainedSeconds: 180, requiredConfirmations: 4 },
     hackMint: { supplyIncreasePct: 15, supplyWindowSeconds: 3600, priceDropPct: 2, sellsSpikeMultiplier: 5 },
     liquidityDrain: { tvlDropPct: 30, tvlWindowSeconds: 3600, poolMsUsdRatioPct: 70, sellsBuysRatio: 3 },
     insiderExit: { largeOutflowUsd: 50000, priceDropPct: 1 },
@@ -91,6 +91,44 @@ describe('evaluateAlerts — depeg', () => {
     const healthySignals = makeSignals() // price back to 1.0001
     evaluateAlerts(state, healthySignals, cfg, PROTOCOL_ID)
     expect(state.has(AlertType.DEPEG)).toBe(false)
+  })
+
+  it('debank price below threshold adds debank confirmation source', () => {
+    const state = new Map()
+    const signals = makeSignals({
+      price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
+    })
+    evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
+    expect(state.get(AlertType.DEPEG)?.confirmations.has('debank')).toBe(true)
+  })
+
+  it('RED with debank as the 4th source (poolPrice healthy)', () => {
+    // poolPrice 正常，但 coingecko+twap+pool+debank 四源确认 → RED
+    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool', 'debank'])
+    const signals = makeSignals({
+      price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.995, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
+    })
+    const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
+    const depeg = alerts.find(a => a.type === AlertType.DEPEG)
+    expect(depeg?.level).toBe(AlertLevel.RED)
+    expect(depeg?.confirmations).toBeGreaterThanOrEqual(4)
+  })
+
+  it('WARNING when only 3 of 5 sources confirm (debank price healthy)', () => {
+    // coingecko+twap+pool 确认，但 poolPrice 和 debank 健康 → 3/5 < required_confirmations=4
+    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool'])
+    const signals = makeSignals({
+      price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.995, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 1.001, fetchedAt: new Date() },
+    })
+    const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
+    const depeg = alerts.find(a => a.type === AlertType.DEPEG)
+    expect(depeg?.level).toBe(AlertLevel.WARNING)
   })
 })
 

@@ -131,7 +131,9 @@ export class AerodromeMonitor implements Monitor {
       poolPrice:   signals.pool?.poolPriceUsd    ?? null,
       twap:        signals.price?.twap           ?? null,
       msUsdRatio:  signals.pool?.msUsdRatio      ?? null,
-      positionUsd: signals.position?.netUsdValue ?? null,
+      positionUsd:       signals.position?.netUsdValue          ?? null,
+      debankMsUsdPrice:  signals.position?.debankMsUsdPrice     ?? null,
+      rewardUsd:         signals.position?.rewardUsdValue        ?? null,
       alerts:      alerts.length,
       sources: Object.fromEntries(SOURCE_NAMES.map(k => [k, this.sourceHealth[k].available])),
     }, 'Poll complete')

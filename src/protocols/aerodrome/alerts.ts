@@ -83,7 +83,7 @@ function formatMessage(type: AlertType, data: Record<string, unknown>, sustained
 // ── 告警规则 ──────────────────────────────────────────────────────────────────
 
 function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
-  const { price, pool } = signals
+  const { price, pool, position } = signals
   const t = cfg.alerts.depeg
   const confirmations = new Set<string>()
   const data: Record<string, unknown> = {}
@@ -101,6 +101,10 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
     data.poolPriceUsd = pool.poolPriceUsd
     if (pool.msUsdRatio > t.poolImbalancePct / 100) confirmations.add('pool')
     if (pool.poolPriceUsd < t.priceThreshold) confirmations.add('poolPrice')
+  }
+  if (position?.debankMsUsdPrice !== null && position?.debankMsUsdPrice !== undefined) {
+    data.debankPrice = position.debankMsUsdPrice
+    if (position.debankMsUsdPrice < t.priceThreshold) confirmations.add('debank')
   }
 
   return buildAlert(AlertType.DEPEG, state, confirmations, data, t, protocol,
