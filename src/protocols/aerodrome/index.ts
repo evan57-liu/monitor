@@ -77,7 +77,7 @@ export class AerodromeMonitor implements Monitor {
       coinGecko, rpc, logger,
     )
     this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}` }, rpc)
-    this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: 'aerodrome' }, deBank)
+    this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress }, deBank, logger)
     this.protocolMonitor = new ProtocolMonitor({ protocolId: 'metronome-synth' }, deBank)
     this.walletMonitor = new WalletMonitor(
       { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, msUsdSymbol: 'msUSD', chain: cfg.chain },

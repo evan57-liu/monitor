@@ -23,7 +23,7 @@ function makeSignals(overrides: Partial<AllSignals> = {}): AllSignals {
     price: { coingecko: 1.0001, twap: 1.0001, fetchedAt: new Date() },
     pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0001, buys1h: 50, sells1h: 50, volume24h: 180_000, fetchedAt: new Date() },
     supply: { totalSupply: 1_000_000n * 10n ** 18n, previousSupply: 1_000_000n * 10n ** 18n, fetchedAt: new Date() },
-    position: { netUsdValue: 18_000, previousNetUsdValue: 18_000, fetchedAt: new Date() },
+    position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
     protocol: { tvlUsd: 55_000_000, previousTvlUsd: 55_000_000, fetchedAt: new Date() },
     wallets: [],
     ...overrides,
@@ -171,7 +171,7 @@ describe('evaluateAlerts — position_drop', () => {
   it('RED when position value drops >10% in window', () => {
     const state = stateWithAge(AlertType.POSITION_DROP, 30 * 60 * 1000, ['position'])
     const signals = makeSignals({
-      position: { netUsdValue: 15_000, previousNetUsdValue: 18_000, fetchedAt: new Date() }, // -16.7%
+      position: { netUsdValue: 15_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 1.0001, fetchedAt: new Date() }, // -16.7%
     })
     const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
     const alert = alerts.find(a => a.type === AlertType.POSITION_DROP)
