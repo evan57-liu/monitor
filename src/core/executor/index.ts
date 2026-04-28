@@ -95,7 +95,7 @@ export class LiveExecutor implements Executor {
   }
 
   private async executeRemoveLiquidity(order: ExecutionOrder, params: RemoveLiquidityParams): Promise<ExecutionResult> {
-    // Read actual liquidity from position if params.liquidity === 0n
+    // 如果 params.liquidity === 0n，则从链上 position 读取实际流动性
     let liquidity = params.liquidity
     if (liquidity === 0n) {
       const position = await this.publicClient.readContract({
@@ -104,7 +104,7 @@ export class LiveExecutor implements Executor {
         functionName: 'positions',
         args: [params.tokenId],
       })
-      liquidity = position[7] // liquidity is index 7 in the tuple
+      liquidity = position[7] // liquidity 是元组中索引为 7 的字段
     }
     if (liquidity === 0n) {
       this.logger.warn({ orderId: order.id }, 'No liquidity to remove, skipping decreaseLiquidity')
@@ -118,7 +118,7 @@ export class LiveExecutor implements Executor {
       await this.waitForReceipt(decreaseTx)
     }
 
-    // Collect all tokens (including owed fees)
+    // 收集所有代币（包括应得费用）
     const collectTx = await this.walletClient.writeContract({
       address: params.positionManagerAddress,
       abi: POSITION_MANAGER_ABI,
@@ -136,7 +136,7 @@ export class LiveExecutor implements Executor {
       args: [{
         tokenIn: params.tokenIn,
         tokenOut: params.tokenOut,
-        tickSpacing: 1, // Aerodrome CL stable pools use tickSpacing=1
+        tickSpacing: 1, // Aerodrome CL 稳定池使用 tickSpacing=1
         recipient: this.account.address,
         deadline: BigInt(order.deadline),
         amountIn: params.amountIn,

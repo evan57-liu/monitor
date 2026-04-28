@@ -1,44 +1,53 @@
-# Environment variable prefix: DM_
-# Any value can be overridden via env var with DM_ prefix + SCREAMING_SNAKE_CASE key path
-# e.g., DM_GLOBAL_DRY_RUN=false overrides global.dry_run
+# 环境变量前缀：DM_
+# 任何配置项均可通过 DM_ 前缀 + SCREAMING_SNAKE_CASE 键路径的环境变量覆盖
+# 例如：DM_GLOBAL_DRY_RUN=false 可覆盖 global.dry_run
 
 global:
+  # ⚠️  上线前必须设为 true，完成三阶段测试后再改为 false
+  # true 时的行为：
+  #   - 数据采集、告警逻辑、通知（Server酱/Email）均正常运行
+  #   - 执行器替换为 DryRunExecutor，只记录日志，不发送任何链上交易
   dry_run: true
-  log_level: "info"   # debug | info | warn | error
+  log_level: "debug"   # debug（最详细，开发/调试时用）| info | warn | error
 
 sources:
   coingecko:
     base_url: "https://pro-api.coingecko.com/api/v3"
-    rate_limit_per_minute: 500
-    timeout_ms: 10000
-    retry_attempts: 3
+    rate_limit_per_minute: 500    # Pro 计划一般 500/min，无需修改
+    timeout_ms: 10000             # 单次请求超时：10 秒
+    retry_attempts: 3             # 失败后最多重试 3 次（指数退避）
   debank:
     base_url: "https://pro-openapi.debank.com/v1"
-    timeout_ms: 15000
+    timeout_ms: 15000             # DeBank 响应较慢，给 15 秒
     retry_attempts: 3
   rpc:
     base:
-      url: "https://mainnet.base.org"
+      url: "https://mainnet.base.org"   # 免费公共 RPC，足够日常使用
+      # 如果公共节点不稳定，可在 configs/.env 中设置：
+      # DM_RPC_BASE_URL=https://你的私有RPC节点
       timeout_ms: 10000
       retry_attempts: 3
 
 notifications:
   serverchan:
-    enabled: true
+    enabled: false
     timeout_ms: 5000
-    retry_attempts: 5
+    retry_attempts: 5             # 失败后重试 5 次，确保告警送达
   email:
     enabled: true
     smtp_host: "smtp.gmail.com"
     smtp_port: 587
-    from: "defi-monitor@gmail.com"
+    from: "liulei552211@gmail.com"
     to:
-      - "your@email.com"
+      - "liuchonglin1@email.com"  # 可填多个收件人，每行一个 "- 地址"
     retry_attempts: 5
-    daily_summary_hour: 9
+    daily_summary_hour: 9         # 每天 9 点发送每日运营总结邮件
   healthchecks:
     enabled: true
-    interval_seconds: 60
+    interval_seconds: 60          # 每 60 秒发一次心跳；超时未收到心跳则发邮件告警
+    # 配置步骤：
+    # 1. 在 https://healthchecks.io 创建新 Check，Period=5min，Grace=5min
+    # 2. 复制 Ping URL 填入 configs/.env 的 DM_HEALTHCHECKS_PING_URL
 
 protocols:
   aerodrome_msusd_usdc:
@@ -46,66 +55,69 @@ protocols:
     chain: "base"
     chain_id: 8453
 
-    # Find these on Basescan / Aerodrome UI
-    pool_address: "FILL_IN"              # Aerodrome msUSD/USDC pool
-    gauge_address: "FILL_IN"             # Gauge contract for staking LP NFT
-    msusd_address: "FILL_IN"             # msUSD token on Base
-    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # USDC on Base
-    router_address: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"  # Aerodrome Router v2
-    position_manager_address: "0x827922686190790b37229fd06084350E74485b72"  # Aerodrome NonfungiblePositionManager
+    # 在 Basescan / Aerodrome UI 上查找这些地址
+    pool_address: "0x7501bc8bb51616f79bfa524e464fb7b41f0b10fb"              # Aerodrome msUSD/USDC 池
+    gauge_address: "0x3d86AED6eCC8dAf71C8b50d06f38455b663265d8"             # 用于质押 LP NFT 的 Gauge 合约
+    msusd_address: "0x526728dbc96689597f85ae4cd716d4f7fccbae9d"             # Base 链上的 msUSD 代币
+    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"              # Base 链上的 USDC（固定地址）
+    router_address: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"            # Aerodrome Router v2（固定地址）
+    position_manager_address: "0x827922686190790b37229fd06084350E74485b72"  # Aerodrome NonfungiblePositionManager（固定地址）
 
-    # Your LP NFT token ID (from Aerodrome UI or Basescan)
-    lp_token_id: 0
+    # ⚠️  必须填入你的真实 LP NFT Token ID
+    # 获取方式：Aerodrome UI → Positions → 找到 msUSD/USDC 仓位右侧显示的 ID
+    # 或在 Basescan 搜索钱包地址 → ERC-721 Tokens → Aerodrome NFT
+    lp_token_id: 62910768
 
-    # Metronome team/treasury wallets (for insider exit detection)
-    team_wallets: []
+    # Metronome 团队/国库钱包（用于内部人退出检测）
+    # 留空则 insider_exit 告警不会触发
+    team_wallets: ["0xcefc8b799a8ee5d9b312aeca73262645d664aaf7","0x7501bc8bb51616f79bfa524e464fb7b41f0b10fb","0x8845126640b36df1d24bf3df9b2903fd4c730fe6","0xc89a0e6334535b34ef40d40fb82d28209df52dcf","0xf4c6d8547bc99ba986c9f45a2ebd867a23efd0d7","0xb3983cddba4b127960a4cdd531ab989264509e23"]
 
     polling:
-      price_ms: 10000       # 10s — CoinGecko price
-      pool_ms: 30000        # 30s — pool reserves + buys/sells
-      supply_ms: 60000      # 60s — totalSupply via RPC
-      position_ms: 60000    # 60s — your position value via DeBank
-      protocol_ms: 120000   # 2min — Metronome protocol TVL
-      team_wallets_ms: 120000  # 2min — team wallet holdings
+      price_ms: 10000       # 10秒 — CoinGecko 价格（最高频，快速感知脱锚）
+      pool_ms: 30000        # 30秒 — 池子储备 + 买入/卖出量
+      supply_ms: 60000      # 60秒 — 通过 RPC 获取 totalSupply（检测黑客铸造）
+      position_ms: 60000    # 60秒 — 通过 DeBank 获取你的仓位价值
+      protocol_ms: 120000   # 2分钟 — Metronome 协议 TVL（检测流动性枯竭）
+      team_wallets_ms: 120000  # 2分钟 — 团队钱包持仓（检测内部人撤离）
 
     alerts:
       depeg:
-        price_threshold: 0.992      # CoinGecko price below this triggers
-        twap_threshold: 0.992       # On-chain TWAP below this confirms
-        pool_imbalance_pct: 75      # msUSD ratio in pool > 75% confirms
-        sustained_seconds: 180      # Must persist 3min before RED
-        required_confirmations: 3   # All 3 sources must confirm
+        price_threshold: 0.992      # CoinGecko 价格低于此值时触发预警
+        twap_threshold: 0.992       # 链上 TWAP 低于此值作为第二确认
+        pool_imbalance_pct: 75      # 池中 msUSD 占比 > 75% 作为第三确认（单边失衡）
+        sustained_seconds: 180      # 三源同时满足后，持续 3 分钟才升级为 RED
+        required_confirmations: 3   # 必须 3 个数据源全部确认，防止单源误报
 
       hack_mint:
-        supply_increase_pct: 15     # totalSupply +15% in window
-        supply_window_seconds: 3600
-        price_drop_pct: 2
-        sells_spike_multiplier: 5
+        supply_increase_pct: 15     # totalSupply 在时间窗口内增加 15% 触发
+        supply_window_seconds: 3600 # 时间窗口：1 小时
+        price_drop_pct: 2           # 同时价格下跌 > 2%（铸币后抛售导致）
+        sells_spike_multiplier: 5   # 同时卖出量是正常水平的 5 倍
 
       liquidity_drain:
-        tvl_drop_pct: 30
+        tvl_drop_pct: 30            # Metronome 整体协议 TVL 1 小时内下降 > 30%
         tvl_window_seconds: 3600
-        pool_msusd_ratio_pct: 70
-        sells_buys_ratio: 3
+        pool_msusd_ratio_pct: 70    # 池子 msUSD 占比 > 70%（USDC 被大量抽走）
+        sells_buys_ratio: 3         # 卖出/买入比 > 3（恐慌性出逃）
 
       insider_exit:
-        large_outflow_usd: 50000
-        price_drop_pct: 1
+        large_outflow_usd: 50000    # 任一团队钱包单次 msUSD 转出 > $50,000
+        price_drop_pct: 1           # 同时价格下跌 > 1%
 
       position_drop:
-        drop_pct: 10
-        window_seconds: 3600
+        drop_pct: 10                # 你的 LP 仓位 1 小时内价值下跌 > 10%
+        window_seconds: 3600        # 时间窗口：1 小时（最后防线，不需要多源确认）
 
     execution:
-      swap_batch_count: 3
-      swap_slippage_bps: 100    # 1%
-      gas_multiplier: 1.2
-      deadline_seconds: 300
-      max_gas_gwei: 50
+      swap_batch_count: 3           # 分 3 批兑换 msUSD → USDC，降低单笔滑点影响
+      swap_slippage_bps: 100        # 最大允许滑点：1%（100 bps = 1%）
+      gas_multiplier: 1.2           # Gas 估算结果乘以 1.2 倍，确保交易及时打包
+      deadline_seconds: 300         # 交易有效期：5 分钟，超时自动失效
+      max_gas_gwei: 50              # Gas 价格上限：超过 50 gwei 则拒绝执行，等待网络拥堵缓解
 
 storage:
   sqlite_path: "data/monitor.db"
   retention_days:
-    price_history: 30
-    pool_snapshots: 30
-    health_snapshots: 7
+    price_history: 30     # 价格记录保留 30 天
+    pool_snapshots: 30    # 池子快照保留 30 天
+    health_snapshots: 7   # 健康状态快照保留 7 天

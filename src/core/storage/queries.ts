@@ -2,7 +2,7 @@
 import type Database from 'better-sqlite3'
 import type { Alert, ExecutionOrder, ExecutionResult, MonitorHealth } from '../types.js'
 
-// ── Price ──────────────────────────────────────────────────────────────────────
+// ── 价格 ──────────────────────────────────────────────────────────────────────
 
 export interface PriceRecord {
   protocol: string
@@ -31,7 +31,7 @@ export function getRecentPrices(
     .all(protocol, token, limit) as Array<{ price: number; source: string; recordedAt: string }>
 }
 
-// ── Pool ───────────────────────────────────────────────────────────────────────
+// ── 流动性池 ───────────────────────────────────────────────────────────────────────
 
 export interface PoolSnapshotRecord {
   protocol: string
@@ -61,7 +61,7 @@ export function insertPoolSnapshot(db: Database.Database, r: PoolSnapshotRecord)
   )
 }
 
-// ── Supply ─────────────────────────────────────────────────────────────────────
+// ── 供应量 ─────────────────────────────────────────────────────────────────────
 
 export interface SupplyRecord {
   token: string
@@ -88,7 +88,7 @@ export function getRecentSupply(
     .all(token, limit) as Array<{ totalSupply: string; recordedAt: string }>
 }
 
-// ── Alert ──────────────────────────────────────────────────────────────────────
+// ── 告警 ──────────────────────────────────────────────────────────────────────
 
 export function insertAlert(db: Database.Database, a: Alert): void {
   db.prepare(
@@ -109,7 +109,7 @@ export function insertAlert(db: Database.Database, a: Alert): void {
   )
 }
 
-// ── Execution ──────────────────────────────────────────────────────────────────
+// ── 执行记录 ──────────────────────────────────────────────────────────────────────
 
 export function insertExecution(
   db: Database.Database,
@@ -135,7 +135,7 @@ export function insertExecution(
   )
 }
 
-// ── Health ─────────────────────────────────────────────────────────────────────
+// ── 健康状态 ─────────────────────────────────────────────────────────────────────
 
 export function insertHealthSnapshot(
   db: Database.Database,

@@ -4,15 +4,15 @@ import type { Alert, ExecutionOrder, UnstakeParams, RemoveLiquidityParams, SwapP
 import type { AerodromeConfig } from '../../core/config.js'
 
 /**
- * Generates a 3-step withdrawal sequence:
- * 1. Unstake LP NFT from gauge
- * 2. Remove all liquidity (decrease to 0)
- * 3. Swap msUSD → USDC in N batches
+ * 生成 3 步撤出序列：
+ * 1. 从 gauge 中取消质押 LP NFT
+ * 2. 移除全部流动性（减少至 0）
+ * 3. 分 N 批将 msUSD 换成 USDC
  *
- * All orders share a groupId. The engine executes them in sequence,
- * aborting on any failure.
+ * 所有订单共享同一个 groupId。引擎按顺序执行，
+ * 任意步骤失败则中止后续步骤。
  *
- * @param msUsdBalance — estimated msUSD balance after removing liquidity
+ * @param msUsdBalance — 移除流动性后估算的 msUSD 余额
  */
 export function generateWithdrawalOrders(
   alert: Alert,
@@ -25,34 +25,34 @@ export function generateWithdrawalOrders(
   const orders: ExecutionOrder[] = []
   let seq = 1
 
-  // Step 1: Unstake LP NFT from gauge
+  // 第 1 步：从 gauge 中取消质押 LP NFT
   const unstakeParams: UnstakeParams = {
     gaugeAddress: cfg.gaugeAddress as `0x${string}`,
     tokenId: BigInt(cfg.lpTokenId),
   }
   orders.push(makeOrder(alert, cfg, groupId, seq++, OrderType.UNSTAKE, unstakeParams, deadline, now))
 
-  // Step 2: Remove all liquidity
-  // liquidity = 0 signals "remove all" — the executor reads actual liquidity from the NFT
+  // 第 2 步：移除全部流动性
+  // liquidity = 0 表示"全部移除"——执行器会从 NFT 读取实际流动性
   const removeParams: RemoveLiquidityParams = {
     positionManagerAddress: cfg.positionManagerAddress as `0x${string}`,
     tokenId: BigInt(cfg.lpTokenId),
-    liquidity: 0n, // executor will call positions(tokenId) to get actual liquidity
+    liquidity: 0n, // 执行器将调用 positions(tokenId) 获取实际流动性
     amount0Min: 0n,
     amount1Min: 0n,
     slippageBps: cfg.execution.swapSlippageBps,
   }
   orders.push(makeOrder(alert, cfg, groupId, seq++, OrderType.REMOVE_LIQUIDITY, removeParams, deadline, now))
 
-  // Step 3: Swap msUSD → USDC in N batches
+  // 第 3 步：分 N 批将 msUSD 换成 USDC
   const batchCount = BigInt(cfg.execution.swapBatchCount)
   const batchAmount = msUsdBalance / batchCount
   for (let i = 0; i < cfg.execution.swapBatchCount; i++) {
-    // Last batch gets the remainder
+    // 最后一批获取余量
     const amountIn = i === cfg.execution.swapBatchCount - 1
       ? msUsdBalance - batchAmount * (batchCount - 1n)
       : batchAmount
-    // msUSD (18 dec) → USDC (6 dec): divide by 1e12 for unit conversion, then apply slippage
+    // msUSD (18 位精度) → USDC (6 位精度)：除以 1e12 进行单位转换，再应用滑点
     const amountOutMin = amountIn / 10n ** 12n * BigInt(10000 - cfg.execution.swapSlippageBps) / 10000n
     const swapParams: SwapParams = {
       routerAddress: cfg.routerAddress as `0x${string}`,

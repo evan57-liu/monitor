@@ -1,16 +1,17 @@
 // src/protocols/aerodrome/types.ts
-// Internal signal types for the aerodrome monitor. Not exported from core/types.ts
-// because they are protocol-specific.
+// Aerodrome 监控器的内部信号类型。不从 core/types.ts 导出，
+// 因为这些类型是协议特有的。
 
 export interface PriceSignal {
-  coingecko: number | null    // null = source unavailable
+  coingecko: number | null    // null = 数据源不可用
   twap: number | null
   fetchedAt: Date
 }
 
 export interface PoolSignal {
   reserveInUsd: number
-  msUsdRatio: number          // 0-1: proportion of msUSD in pool
+  msUsdRatio: number          // 0-1：msUSD 在池中的占比（由 RPC balanceOf 计算）
+  poolPriceUsd: number        // GeckoTerminal 池内推导的 msUSD 价格，与 coingecko 交叉验证
   buys1h: number
   sells1h: number
   volume24h: number
@@ -19,7 +20,7 @@ export interface PoolSignal {
 
 export interface SupplySignal {
   totalSupply: bigint
-  previousSupply: bigint | null  // null on first reading
+  previousSupply: bigint | null  // 首次读取时为 null
   fetchedAt: Date
 }
 

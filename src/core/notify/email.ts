@@ -53,7 +53,7 @@ export class EmailChannel implements NotificationChannel {
   }
 }
 
-/** Minimal markdown→HTML: bold, newlines, code blocks */
+/** 简易 markdown→HTML 转换：粗体、换行、代码块 */
 function markdownToHtml(md: string): string {
   return md
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')

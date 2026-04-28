@@ -1,8 +1,8 @@
 // src/core/logger.ts
 import pino from 'pino'
 
-// Logger is initialised once and exported as a singleton.
-// In tests, import directly from 'pino' to avoid config loading.
+// Logger 初始化一次后作为单例导出。
+// 在测试中，直接从 'pino' 导入以避免加载配置。
 let _logger: pino.Logger | null = null
 
 export function initLogger(logLevel: string): pino.Logger {

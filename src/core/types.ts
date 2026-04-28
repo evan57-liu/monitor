@@ -1,17 +1,16 @@
 // src/core/types.ts
-// Central contract for the entire system. All interfaces and enums live here.
-// Other modules import from this file. This file imports nothing from the project.
+// 整个系统的核心契约。所有接口和枚举均定义于此。
+// 其他模块从本文件导入。本文件不从项目中导入任何内容。
 //
-// NOTE: tsconfig has exactOptionalPropertyTypes enabled.
-// Optional fields (e.g. txHash?: string) must be OMITTED, not set to undefined.
-// Use conditional spreading: { ...(txHash != null && { txHash }) }
+// 注意：tsconfig 已启用 exactOptionalPropertyTypes。
+// 可选字段（如 txHash?: string）必须省略，不能设为 undefined。
+// 使用条件展开：{ ...(txHash != null && { txHash }) }
 //
-// NOTE: ExecutionOrder.params is an untagged union narrowed by order.type.
-// Consumers must switch on order.type and use type assertions (e.g., params as UnstakeParams).
-// This is an accepted design tradeoff — the type+params pairing is enforced at the
-// order generation layer (orders.ts), not at the type level.
+// 注意：ExecutionOrder.params 是一个无标签联合类型，通过 order.type 收窄。
+// 消费方必须对 order.type 使用 switch，并配合类型断言（如 params as UnstakeParams）。
+// 这是一种已接受的设计取舍——type+params 的配对由订单生成层（orders.ts）而非类型层保证。
 
-// ── Enums ─────────────────────────────────────────────────────────────────────
+// ── 枚举 ──────────────────────────────────────────────────────────────────────
 
 export enum AlertLevel {
   INFO = 'info',
@@ -42,7 +41,7 @@ export enum OrderStatus {
   SKIPPED_DRY_RUN = 'skipped_dry_run',
 }
 
-// ── Monitor ───────────────────────────────────────────────────────────────────
+// ── 监控器 ────────────────────────────────────────────────────────────────────
 
 export interface Monitor {
   readonly id: string
@@ -70,11 +69,11 @@ export interface DataSourceStatus {
   lastSuccessAt: Date | null
   consecutiveFailures: number
   latencyMs: number | null
-  /** null = primary is active */
+  /** null 表示主数据源处于活跃状态 */
   fallbackActive: string | null
 }
 
-// ── Alert ─────────────────────────────────────────────────────────────────────
+// ── 告警 ──────────────────────────────────────────────────────────────────────
 
 export interface Alert {
   id: string
@@ -82,9 +81,9 @@ export interface Alert {
   level: AlertLevel
   protocol: string
   title: string
-  /** Markdown-formatted detail for notifications */
+  /** Markdown 格式的通知详情 */
   message: string
-  /** Structured evidence data for storage */
+  /** 结构化的证据数据，用于存储 */
   data: Record<string, unknown>
   triggeredAt: Date
   confirmations: number
@@ -93,21 +92,21 @@ export interface Alert {
   requiredSustainedMs: number
 }
 
-// ── ExecutionOrder ────────────────────────────────────────────────────────────
+// ── 执行订单 ──────────────────────────────────────────────────────────────────
 
 export interface ExecutionOrder {
   id: string
   alertId: string
   protocol: string
   type: OrderType
-  /** 1-based sequence within the withdrawal group */
+  /** 撤出组内从 1 开始的执行序号 */
   sequence: number
-  /** Orders with the same groupId execute sequentially; abort on failure */
+  /** 相同 groupId 的订单按顺序执行；失败则中止 */
   groupId: string
   params: UnstakeParams | RemoveLiquidityParams | SwapParams
-  /** Refuse to execute above this gas price (gwei) */
+  /** 超过此 Gas 价格（gwei）拒绝执行 */
   maxGasGwei: number
-  /** Unix timestamp deadline for the transaction */
+  /** 交易的 Unix 时间戳截止时间 */
   deadline: number
   status: OrderStatus
   txHash?: string
@@ -127,7 +126,7 @@ export interface RemoveLiquidityParams {
   liquidity: bigint
   amount0Min: bigint
   amount1Min: bigint
-  /** Basis points, e.g. 100 = 1% */
+  /** 基点，例如 100 = 1% */
   slippageBps: number
 }
 
@@ -141,24 +140,24 @@ export interface SwapParams {
   totalBatches: number
 }
 
-// ── Notification ──────────────────────────────────────────────────────────────
+// ── 通知 ──────────────────────────────────────────────────────────────────────
 
 export interface NotificationChannel {
   readonly name: string
-  /** Returns true if delivered, false on failure. Must NOT throw. */
+  /** 投递成功返回 true，失败返回 false。不得抛出异常。 */
   send(notification: Notification): Promise<boolean>
   test(): Promise<boolean>
 }
 
 export interface Notification {
   title: string
-  /** Markdown-formatted body */
+  /** Markdown 格式的正文 */
   body: string
   level: AlertLevel
   metadata?: Record<string, unknown>
 }
 
-// ── Executor ──────────────────────────────────────────────────────────────────
+// ── 执行器 ────────────────────────────────────────────────────────────────────
 
 export interface Executor {
   execute(order: ExecutionOrder): Promise<ExecutionResult>

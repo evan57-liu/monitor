@@ -11,7 +11,7 @@ export class HealthchecksMonitor {
 
   start(): void {
     if (this.timer) return
-    // Ping immediately on start
+    // 启动时立即发送一次心跳
     void this.ping()
     this.timer = setInterval(() => void this.ping(), this.intervalSeconds * 1000)
   }
@@ -23,7 +23,7 @@ export class HealthchecksMonitor {
     }
   }
 
-  /** Call this when something is wrong to signal failure to Healthchecks */
+  /** 当出现异常时调用，向 Healthchecks 发送失败信号 */
   async fail(reason: string): Promise<void> {
     try {
       await globalThis.fetch(`${this.pingUrl}/fail`, {

@@ -1,9 +1,10 @@
 // src/core/config.test.ts
-import { describe, it, expect, beforeEach } from 'vitest'
-import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadConfig } from './config.js'
+import type { KeychainReader } from './keychain.js'
 
 const TMP = join(tmpdir(), 'dm-config-test')
 
@@ -157,6 +158,56 @@ describe('loadConfig', () => {
     writeFileSync(join(TMP, '.env'), '') // empty env
     expect(() => loadConfig(join(TMP, 'monitor.yaml'), join(TMP, '.env'))).toThrow(
       /DM_COINGECKO_API_KEY/,
+    )
+  })
+})
+
+// ENV without DM_PRIVATE_KEY, all other secrets present
+const ENV_WITHOUT_PRIVATE_KEY = `
+DM_COINGECKO_API_KEY=test-cg-key
+DM_DEBANK_ACCESS_KEY=test-db-key
+DM_SERVERCHAN_SENDKEY=SCTtest
+DM_EMAIL_USER=test@gmail.com
+DM_EMAIL_PASSWORD=test-pass
+DM_HEALTHCHECKS_PING_URL=https://hc-ping.com/test
+`
+
+describe('loadConfig Keychain fallback', () => {
+  beforeEach(() => {
+    for (const key of SECRET_KEYS) {
+      delete process.env[key]
+    }
+    mkdirSync(TMP, { recursive: true })
+    writeFileSync(join(TMP, 'monitor.yaml'), MINIMAL_YAML)
+    writeFileSync(join(TMP, '.env'), ENV_WITHOUT_PRIVATE_KEY)
+  })
+
+  it('reads private key from Keychain when DM_PRIVATE_KEY is not in env', () => {
+    const keychainKey = '0x' + '2'.repeat(64)
+    const mockKeychain: KeychainReader = { read: vi.fn().mockReturnValue(keychainKey) }
+
+    const cfg = loadConfig(join(TMP, 'monitor.yaml'), join(TMP, '.env'), mockKeychain)
+
+    expect(cfg.secrets.privateKey).toBe(keychainKey)
+    expect(mockKeychain.read).toHaveBeenCalledWith('defi-monitor', 'private-key')
+  })
+
+  it('prefers DM_PRIVATE_KEY env var over Keychain when both are present', () => {
+    const envKey = '0x' + '1'.repeat(64)
+    process.env['DM_PRIVATE_KEY'] = envKey
+    const mockKeychain: KeychainReader = { read: vi.fn().mockReturnValue('0x' + '2'.repeat(64)) }
+
+    const cfg = loadConfig(join(TMP, 'monitor.yaml'), join(TMP, '.env'), mockKeychain)
+
+    expect(cfg.secrets.privateKey).toBe(envKey)
+    expect(mockKeychain.read).not.toHaveBeenCalled()
+  })
+
+  it('throws a helpful error mentioning both env var and Keychain when neither is set', () => {
+    const mockKeychain: KeychainReader = { read: vi.fn().mockReturnValue(null) }
+
+    expect(() => loadConfig(join(TMP, 'monitor.yaml'), join(TMP, '.env'), mockKeychain)).toThrow(
+      /DM_PRIVATE_KEY|defi-monitor/,
     )
   })
 })

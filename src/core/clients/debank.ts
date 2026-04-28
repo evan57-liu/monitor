@@ -34,7 +34,7 @@ interface CacheEntry<T> { data: T; expiresAt: number }
 
 export class DeBankClient {
   private cache = new Map<string, CacheEntry<unknown>>()
-  private readonly ttlMs = 50_000 // ~50s for 60s polling
+  private readonly ttlMs = 50_000 // 约 50 秒，适配 60 秒轮询间隔
 
   constructor(private readonly cfg: DeBankConfig) {}
 

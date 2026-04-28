@@ -30,7 +30,7 @@ export function evaluateAlerts(
   return alerts
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
 function buildAlert(
   type: AlertType,
@@ -80,7 +80,7 @@ function formatMessage(type: AlertType, data: Record<string, unknown>, sustained
   return `**Type:** ${type}\n**Sustained:** ${mins}m\n**Confirmations:** ${confirmations}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``
 }
 
-// ── Alert Rules ───────────────────────────────────────────────────────────────
+// ── 告警规则 ──────────────────────────────────────────────────────────────────
 
 function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
   const { price, pool } = signals
@@ -98,7 +98,9 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
   }
   if (pool !== null) {
     data.msUsdRatio = pool.msUsdRatio
+    data.poolPriceUsd = pool.poolPriceUsd
     if (pool.msUsdRatio > t.poolImbalancePct / 100) confirmations.add('pool')
+    if (pool.poolPriceUsd < t.priceThreshold) confirmations.add('poolPrice')
   }
 
   return buildAlert(AlertType.DEPEG, state, confirmations, data, t, protocol,

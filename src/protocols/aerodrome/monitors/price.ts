@@ -2,6 +2,7 @@
 import type { CoinGeckoClient } from '../../../core/clients/coingecko.js'
 import type { RpcClient } from '../../../core/clients/rpc.js'
 import type { PriceSignal } from '../types.js'
+import type pino from 'pino'
 
 interface PriceMonitorConfig {
   msUsdAddress: `0x${string}`
@@ -13,6 +14,7 @@ export class PriceMonitor {
     private readonly cfg: PriceMonitorConfig,
     private readonly coinGecko: CoinGeckoClient,
     private readonly rpc: RpcClient,
+    private readonly logger: pino.Logger,
   ) {}
 
   async check(): Promise<PriceSignal> {
@@ -21,10 +23,19 @@ export class PriceMonitor {
       this.rpc.getTwapPrice(this.cfg.poolAddress),
     ])
 
-    return {
+    if (cgResult.status === 'rejected') {
+      this.logger.warn({ err: cgResult.reason }, 'CoinGecko getTokenPrice failed')
+    }
+    if (twapResult.status === 'rejected') {
+      this.logger.warn({ err: twapResult.reason }, 'RPC getTwapPrice failed')
+    }
+
+    const signal = {
       coingecko: cgResult.status === 'fulfilled' ? cgResult.value.priceUsd : null,
       twap: twapResult.status === 'fulfilled' ? twapResult.value : null,
       fetchedAt: new Date(),
     }
+    this.logger.debug({ coingecko: signal.coingecko, twap: signal.twap }, 'PriceMonitor signal')
+    return signal
   }
 }

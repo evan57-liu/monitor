@@ -2,8 +2,8 @@ import { AlertLevel } from '../types.js'
 import type { Alert, NotificationChannel, Notification } from '../types.js'
 
 interface NotifierOptions {
-  criticalChannels?: string[]   // channel names to use for RED alerts
-  normalChannels?: string[]     // channel names to use for WARNING alerts
+  criticalChannels?: string[]   // 用于 RED 级别告警的渠道名称列表
+  normalChannels?: string[]     // 用于 WARNING 级别告警的渠道名称列表
 }
 
 const DEFAULT_OPTS: Required<NotifierOptions> = {
@@ -42,7 +42,7 @@ export class Notifier {
       body: markdown,
       level: AlertLevel.INFO,
     }
-    // Daily summary goes to email only
+    // 每日摘要仅发送至 email 渠道
     await this.sendToChannels(['email'], notification)
   }
 
@@ -59,7 +59,7 @@ export class Notifier {
   private async sendToChannels(names: string[], notification: Notification): Promise<void> {
     const targets = this.channels.filter(ch => names.includes(ch.name))
     await Promise.allSettled(targets.map(ch => ch.send(notification)))
-    // We intentionally ignore individual failures — each channel handles its own retries.
-    // If all fail, the alert is still logged in SQLite.
+    // 有意忽略单个渠道的失败——每个渠道自行处理重试逻辑。
+    // 若全部失败，告警仍会记录在 SQLite 中。
   }
 }

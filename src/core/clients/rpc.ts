@@ -7,13 +7,13 @@ export interface RpcConfig {
   timeoutMs: number
 }
 
-// ERC-20 ABI subset — totalSupply + balanceOf
+// ERC-20 ABI 子集 — totalSupply + balanceOf
 const ERC20_ABI = parseAbi([
   'function totalSupply() view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
 ])
 
-// Aerodrome CL pool ABI subset — for TWAP
+// Aerodrome CL 池 ABI 子集 — 用于 TWAP 计算
 const CL_POOL_ABI = parseAbi([
   'function observe(uint32[] secondsAgos) view returns (int56[] tickCumulatives, uint160[] secondsPerLiquidityCumulativeX128s)',
   'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
@@ -24,6 +24,8 @@ const CL_POOL_ABI = parseAbi([
 export class RpcClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly client: ReturnType<typeof createPublicClient<any, any>>
+  private readonly balanceCache = new Map<string, { value: bigint; expiresAt: number }>()
+  private static readonly BALANCE_TTL_MS = 20_000
 
   constructor(cfg: RpcConfig) {
     this.client = createPublicClient({
@@ -40,10 +42,25 @@ export class RpcClient {
     })
   }
 
+  async getTokenBalance(tokenAddress: `0x${string}`, holderAddress: `0x${string}`): Promise<bigint> {
+    const key = `${tokenAddress}:${holderAddress}`
+    const cached = this.balanceCache.get(key)
+    if (cached !== undefined && Date.now() < cached.expiresAt) return cached.value
+
+    const value = await this.client.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [holderAddress],
+    })
+    this.balanceCache.set(key, { value, expiresAt: Date.now() + RpcClient.BALANCE_TTL_MS })
+    return value
+  }
+
   /**
-   * Returns the 5-minute TWAP price of token0 in terms of token1.
-   * Uses tick arithmetic: price = 1.0001^(avgTick).
-   * Returns price as a plain number (e.g., 0.9985 for msUSD).
+   * 返回 token0 相对 token1 的 5 分钟 TWAP 价格。
+   * 使用 tick 算术计算：price = 1.0001^(avgTick)。
+   * 返回普通数字形式的价格（例如 msUSD 对应 0.9985）。
    */
   async getTwapPrice(poolAddress: `0x${string}`, twapWindowSeconds = 300): Promise<number> {
     const secondsAgos = [twapWindowSeconds, 0] as const

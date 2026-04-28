@@ -2,8 +2,9 @@
 import { readFileSync } from 'node:fs'
 import { config as loadDotenv } from 'dotenv'
 import { parse } from 'yaml'
+import type { KeychainReader } from './keychain.js'
 
-// ── Config types ───────────────────────────────────────────────────────────────
+// ── 配置类型 ───────────────────────────────────────────────────────────────────
 
 export interface AppConfig {
   global: { dryRun: boolean; logLevel: string }
@@ -48,9 +49,9 @@ export interface AerodromeConfig {
   execution: { swapBatchCount: number; swapSlippageBps: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number }
 }
 
-// ── Loader ────────────────────────────────────────────────────────────────────
+// ── 加载器 ────────────────────────────────────────────────────────────────────
 
-export function loadConfig(yamlPath: string, envPath: string): AppConfig {
+export function loadConfig(yamlPath: string, envPath: string, keychainReader?: KeychainReader): AppConfig {
   loadDotenv({ path: envPath, override: false })
 
   let raw: string
@@ -71,7 +72,7 @@ export function loadConfig(yamlPath: string, envPath: string): AppConfig {
   const secrets = {
     coingeckoApiKey: requireEnv('DM_COINGECKO_API_KEY'),
     debankAccessKey: requireEnv('DM_DEBANK_ACCESS_KEY'),
-    privateKey: requireEnv('DM_PRIVATE_KEY'),
+    privateKey: requirePrivateKey(keychainReader),
   }
 
   const ae = y.protocols.aerodrome_msusd_usdc
@@ -133,4 +134,18 @@ function requireEnv(key: string): string {
   const value = process.env[key]
   if (!value) throw new Error(`Required environment variable ${key} is not set`)
   return value
+}
+
+function requirePrivateKey(keychain?: KeychainReader): string {
+  const envValue = process.env['DM_PRIVATE_KEY']
+  if (envValue) return envValue
+
+  const keychainValue = keychain?.read('defi-monitor', 'private-key') ?? null
+  if (keychainValue) return keychainValue
+
+  throw new Error(
+    'Private key not found. Set DM_PRIVATE_KEY in configs/.env, ' +
+    'or add it to macOS Keychain:\n' +
+    '  security add-generic-password -s defi-monitor -a private-key -w <YOUR_PRIVATE_KEY>',
+  )
 }

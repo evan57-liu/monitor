@@ -24,7 +24,7 @@ interface RegisteredMonitor {
 }
 
 const MAX_CONSECUTIVE_FAILURES = 5
-const PAUSE_DURATION_MS = 5 * 60 * 1000  // 5 minutes
+const PAUSE_DURATION_MS = 5 * 60 * 1000  // 5 分钟
 
 export class Engine {
   private readonly monitors = new Map<string, RegisteredMonitor>()
@@ -49,7 +49,7 @@ export class Engine {
 
   start(): void {
     for (const [id, reg] of this.monitors) {
-      // Run first cycle immediately, then on interval
+      // 立即执行第一次轮询，之后按间隔执行
       void this.runCycle(id)
       reg.timer = setInterval(() => void this.runCycle(id), reg.monitor.pollIntervalMs)
     }
@@ -62,7 +62,7 @@ export class Engine {
     }
   }
 
-  /** Exposed for testing only */
+  /** 仅用于测试暴露 */
   async runCycleForTest(monitorId: string): Promise<void> {
     await this.runCycle(monitorId)
   }
@@ -77,10 +77,10 @@ export class Engine {
       const result = await reg.monitor.poll()
       reg.consecutiveFailures = 0
 
-      // Store health
+      // 存储健康快照
       insertHealthSnapshot(this.cfg.db, monitorId, result.health)
 
-      // Process alerts
+      // 处理告警
       for (const alert of result.alerts) {
         insertAlert(this.cfg.db, alert)
         if (alert.level === AlertLevel.RED || alert.level === AlertLevel.WARNING) {
@@ -88,7 +88,7 @@ export class Engine {
         }
       }
 
-      // Execute orders (sequential within group, abort on failure)
+      // 执行订单（组内顺序执行，失败则中止）
       if (result.orders.length > 0) {
         await this.executeOrderGroup(result.orders)
       }
@@ -119,7 +119,7 @@ export class Engine {
       if (result.status === OrderStatus.FAILED) {
         this.cfg.logger.error({ orderId: order.id, error: result.error }, 'Order failed — aborting group')
         await this.cfg.notifier.notifyAlert(this.makeExecutionFailureAlert(order, result.error))
-        break // abort remaining orders in this group
+        break // 中止该组剩余订单
       }
     }
   }

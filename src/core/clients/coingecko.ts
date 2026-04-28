@@ -10,20 +10,18 @@ export interface CoinGeckoConfig {
 
 export interface TokenPrice {
   priceUsd: number
-  priceChange24hPct: number
   fetchedAt: Date
 }
 
 export interface PoolData {
   reserveInUsd: number
-  baseTokenPriceUsd: number
+  baseTokenPriceUsd: number   // msUSD price (USD) derived from pool AMM
+  quotePriceUsd: number       // USDC price (USD) — should stay ≈1.0; deviation means USDC stress
   volume24h: number
   buys1h: number
   sells1h: number
   buys24h: number
   sells24h: number
-  reserve0Raw: string
-  reserve1Raw: string
   fetchedAt: Date
 }
 
@@ -34,19 +32,20 @@ interface CacheEntry<T> {
 
 export class CoinGeckoClient {
   private cache = new Map<string, CacheEntry<unknown>>()
-  private readonly ttlMs = 8_000 // 8s — safe for 10s polling interval
+  private readonly ttlMs = 8_000 // 8 秒 — 适配 10 秒轮询间隔的安全缓存时长
 
   constructor(private readonly cfg: CoinGeckoConfig) {}
 
   async getTokenPrice(tokenAddress: string): Promise<TokenPrice> {
     return this.cached(`token:${tokenAddress}`, async () => {
-      const url = `${this.cfg.baseUrl}/onchain/networks/base/tokens/${tokenAddress}`
+      const url = `${this.cfg.baseUrl}/onchain/simple/networks/base/token_price/${tokenAddress}`
       const raw = await this.fetch(url)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attrs = (raw as any).data.attributes
+      const tokenPrices = (raw as any).data.attributes.token_prices as Record<string, string>
+      const priceStr = tokenPrices[tokenAddress]
+      if (!priceStr) throw new Error(`CoinGecko returned no price for token ${tokenAddress}`)
       return {
-        priceUsd: parseFloat(attrs.price_usd as string),
-        priceChange24hPct: parseFloat(attrs.price_change_percentage.h24 as string),
+        priceUsd: parseFloat(priceStr),
         fetchedAt: new Date(),
       }
     })
@@ -61,13 +60,12 @@ export class CoinGeckoClient {
       return {
         reserveInUsd: parseFloat(attrs.reserve_in_usd as string),
         baseTokenPriceUsd: parseFloat(attrs.base_token_price_usd as string),
+        quotePriceUsd: parseFloat(attrs.quote_token_price_usd as string),
         volume24h: parseFloat(attrs.volume_usd.h24 as string),
         buys1h: attrs.transactions.h1.buys as number,
         sells1h: attrs.transactions.h1.sells as number,
         buys24h: attrs.transactions.h24.buys as number,
         sells24h: attrs.transactions.h24.sells as number,
-        reserve0Raw: attrs.reserve0 as string,
-        reserve1Raw: attrs.reserve1 as string,
         fetchedAt: new Date(),
       }
     })
