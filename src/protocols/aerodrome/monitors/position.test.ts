@@ -8,9 +8,9 @@ const mockDeBank = { getUserProtocolPosition: vi.fn() } as unknown as DeBankClie
 describe('PositionMonitor', () => {
   it('tracks previous value across calls', async () => {
     vi.mocked(mockDeBank.getUserProtocolPosition)
-      .mockResolvedValueOnce({ netUsdValue: 18000, assetUsdValue: 18000, debtUsdValue: 0, fetchedAt: new Date() })
-      .mockResolvedValueOnce({ netUsdValue: 17500, assetUsdValue: 17500, debtUsdValue: 0, fetchedAt: new Date() })
-    const m = new PositionMonitor({ walletAddress: '0xuser', protocolId: 'aerodrome' }, mockDeBank)
+      .mockResolvedValueOnce({ netUsdValue: 18000, assetUsdValue: 18000, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, fetchedAt: new Date() })
+      .mockResolvedValueOnce({ netUsdValue: 17500, assetUsdValue: 17500, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, fetchedAt: new Date() })
+    const m = new PositionMonitor({ walletAddress: '0xuser', protocolId: 'base_aerodrome3', positionIndex: '62910768' }, mockDeBank)
     const s1 = await m.check()
     expect(s1?.previousNetUsdValue).toBeNull()
     const s2 = await m.check()
@@ -20,7 +20,7 @@ describe('PositionMonitor', () => {
 
   it('returns null when DeBank fails', async () => {
     vi.mocked(mockDeBank.getUserProtocolPosition).mockRejectedValue(new Error('fail'))
-    const m = new PositionMonitor({ walletAddress: '0xuser', protocolId: 'aerodrome' }, mockDeBank)
+    const m = new PositionMonitor({ walletAddress: '0xuser', protocolId: 'base_aerodrome3', positionIndex: '62910768' }, mockDeBank)
     expect(await m.check()).toBeNull()
   })
 })
