@@ -199,7 +199,7 @@ alerts:
     twap_threshold: 0.992     # 链上 TWAP 确认阈值
     pool_imbalance_pct: 75    # 池中 msUSD > 75% 确认池子失衡
     sustained_seconds: 180    # 须持续 3 分钟才升级为 RED
-    required_confirmations: 3 # 三个数据源全部确认
+    required_confirmations: 4 # 5 个数据源（coingecko/twap/pool/poolPrice/debank），5 中取 4
 
   hack_mint:
     supply_increase_pct: 15   # totalSupply 1小时内增加 15%
@@ -498,7 +498,7 @@ npm run dev
 ```yaml
 price_threshold: 0.992
 sustained_seconds: 180
-required_confirmations: 3
+required_confirmations: 4
 ```
 
 **验证清单 ✓**：
@@ -1212,12 +1212,14 @@ Engine.executeOrderGroup（按序执行，失败中止）
 
 ### Depeg（脱锚）
 
-**触发条件**（3 个数据源全部确认 + 持续 3 分钟）：
+**触发条件**（5 个数据源中 4 个确认 + 持续 3 分钟）：
 1. CoinGecko 价格 < $0.992
 2. Aerodrome 池子 TWAP < $0.992
 3. 池子中 msUSD 占比 > 75%（单边失衡）
+4. 池子内推导价格 < $0.992
+5. DeBank 报价 < $0.992
 
-**误报防护**：三源确认避免单一数据源故障误报；3 分钟持续时间避免瞬时价格波动
+**误报防护**：5 个独立数据源中 4 个确认（coingecko/twap/pool/poolPrice/debank），避免单源故障误报；3 分钟持续时间避免瞬时价格波动
 
 ### Hack Mint（黑客铸造）
 

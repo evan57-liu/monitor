@@ -90,7 +90,7 @@ protocols:
         price_threshold: 0.992      # CoinGecko 价格低于此值时触发预警
         twap_threshold: 0.992       # 链上 TWAP 低于此值作为第二确认
         pool_imbalance_pct: 75      # 池中 msUSD 占比 > 75% 作为第三确认（单边失衡）
-        sustained_seconds: 180      # 三源同时满足后，持续 3 分钟才升级为 RED
+        sustained_seconds: 180      # 达到 required_confirmations 后，持续 3 分钟才升级为 RED
         required_confirmations: 4   # 5 个数据源（coingecko/twap/pool/poolPrice/debank），5 中取 4
 
       hack_mint:
