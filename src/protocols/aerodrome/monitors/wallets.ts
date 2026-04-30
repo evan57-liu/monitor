@@ -1,6 +1,7 @@
 // src/protocols/aerodrome/monitors/wallets.ts
 import type { DeBankClient } from '../../../core/clients/debank.js'
 import type { WalletSignal } from '../types.js'
+import type pino from 'pino'
 
 interface WalletMonitorConfig {
   teamWallets: string[]
@@ -12,7 +13,11 @@ interface WalletMonitorConfig {
 export class WalletMonitor {
   private previousAmounts = new Map<string, number>()
 
-  constructor(private readonly cfg: WalletMonitorConfig, private readonly debank: DeBankClient) {}
+  constructor(
+    private readonly cfg: WalletMonitorConfig,
+    private readonly debank: DeBankClient,
+    private readonly logger?: pino.Logger,
+  ) {}
 
   async check(): Promise<WalletSignal[]> {
     if (this.cfg.teamWallets.length === 0) return []
@@ -32,6 +37,7 @@ export class WalletMonitor {
     const msUsdAmount = msUsdToken?.amount ?? 0
     const msUsdUsdValue = msUsdToken?.usdValue ?? 0
     const previous = this.previousAmounts.get(walletAddress) ?? null
+    this.logger?.debug({ wallet: walletAddress, msUsdAmount, msUsdUsdValue, previousMsUsdAmount: previous }, 'WalletMonitor signal')
     this.previousAmounts.set(walletAddress, msUsdAmount)
     return { walletAddress, msUsdAmount, msUsdUsdValue, previousMsUsdAmount: previous, fetchedAt: new Date() }
   }

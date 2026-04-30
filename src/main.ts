@@ -46,17 +46,17 @@ async function main(): Promise<void> {
     apiKey: cfg.secrets.coingeckoApiKey,
     timeoutMs: cfg.sources.coingecko.timeoutMs,
     retryAttempts: cfg.sources.coingecko.retryAttempts,
-  })
+  }, logger)
   const deBank = new DeBankClient({
     baseUrl: cfg.sources.debank.baseUrl,
     accessKey: cfg.secrets.debankAccessKey,
     timeoutMs: cfg.sources.debank.timeoutMs,
     retryAttempts: cfg.sources.debank.retryAttempts,
-  })
+  }, logger)
   const rpc = new RpcClient({
     url: cfg.sources.rpc.base.url,
     timeoutMs: cfg.sources.rpc.base.timeoutMs,
-  })
+  }, logger)
 
   // ── 通知渠道 ────────────────────────────────────────────────────────────
   const channels = []

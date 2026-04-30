@@ -1,5 +1,6 @@
 // src/core/clients/coingecko.ts
 import { withRetry } from '../retry.js'
+import type pino from 'pino'
 
 export interface CoinGeckoConfig {
   baseUrl: string
@@ -34,7 +35,7 @@ export class CoinGeckoClient {
   private cache = new Map<string, CacheEntry<unknown>>()
   private readonly ttlMs = 8_000 // 8 秒 — 适配 10 秒轮询间隔的安全缓存时长
 
-  constructor(private readonly cfg: CoinGeckoConfig) {}
+  constructor(private readonly cfg: CoinGeckoConfig, private readonly logger?: pino.Logger) {}
 
   async getTokenPrice(tokenAddress: string): Promise<TokenPrice> {
     return this.cached(`token:${tokenAddress}`, async () => {
@@ -76,11 +77,14 @@ export class CoinGeckoClient {
       async () => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), this.cfg.timeoutMs)
+        const t0 = Date.now()
+        this.logger?.debug({ url }, 'CoinGecko →')
         try {
           const res = await globalThis.fetch(url, {
             headers: { 'x-cg-pro-api-key': this.cfg.apiKey },
             signal: controller.signal,
           })
+          this.logger?.debug({ url, status: res.status, durationMs: Date.now() - t0 }, 'CoinGecko ←')
           if (!res.ok) throw new Error(`CoinGecko API error: ${res.status}`)
           return res.json()
         } finally {
@@ -93,7 +97,10 @@ export class CoinGeckoClient {
 
   private async cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key)
-    if (hit && hit.expiresAt > Date.now()) return hit.data as T
+    if (hit && hit.expiresAt > Date.now()) {
+      this.logger?.debug({ key }, 'CoinGecko cache hit')
+      return hit.data as T
+    }
     const data = await fn()
     this.cache.set(key, { data, expiresAt: Date.now() + this.ttlMs })
     return data

@@ -1,5 +1,6 @@
 // src/core/clients/debank.ts
 import { withRetry } from '../retry.js'
+import type pino from 'pino'
 
 export interface DeBankConfig {
   baseUrl: string
@@ -19,7 +20,6 @@ export interface UserProtocolPosition {
 
 export interface ProtocolTvl {
   tvlUsd: number
-  userCount: number
   fetchedAt: Date
 }
 
@@ -38,7 +38,7 @@ export class DeBankClient {
   private cache = new Map<string, CacheEntry<unknown>>()
   private readonly ttlMs = 50_000 // 约 50 秒，适配 60 秒轮询间隔
 
-  constructor(private readonly cfg: DeBankConfig) {}
+  constructor(private readonly cfg: DeBankConfig, private readonly logger?: pino.Logger) {}
 
   async getUserProtocolPosition(walletAddress: string, protocolId: string, poolId?: string): Promise<UserProtocolPosition> {
     return this.cached(`position:${walletAddress}:${protocolId}:${poolId ?? ''}`, async () => {
@@ -82,7 +82,6 @@ export class DeBankClient {
       const raw = await this.fetch(url) as any
       return {
         tvlUsd: raw.tvl as number,
-        userCount: raw.user_count as number,
         fetchedAt: new Date(),
       }
     })
@@ -90,7 +89,7 @@ export class DeBankClient {
 
   async getWalletTokens(walletAddress: string, chain: string): Promise<WalletToken[]> {
     return this.cached(`tokens:${walletAddress}:${chain}`, async () => {
-      const url = `${this.cfg.baseUrl}/user/token_list?user_addr=${walletAddress}&chain_id=${chain}&is_all=false`
+      const url = `${this.cfg.baseUrl}/user/token_list?id=${walletAddress}&chain_id=${chain}&is_all=false`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = await this.fetch(url) as any[]
       return raw.map(t => ({
@@ -109,11 +108,14 @@ export class DeBankClient {
       async () => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), this.cfg.timeoutMs)
+        const t0 = Date.now()
+        this.logger?.debug({ url }, 'DeBank →')
         try {
           const res = await globalThis.fetch(url, {
             headers: { AccessKey: this.cfg.accessKey },
             signal: controller.signal,
           })
+          this.logger?.debug({ url, status: res.status, durationMs: Date.now() - t0 }, 'DeBank ←')
           if (!res.ok) throw new Error(`DeBank API error: ${res.status}`)
           return res.json()
         } finally {
@@ -126,7 +128,10 @@ export class DeBankClient {
 
   private async cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key)
-    if (hit && hit.expiresAt > Date.now()) return hit.data as T
+    if (hit && hit.expiresAt > Date.now()) {
+      this.logger?.debug({ key }, 'DeBank cache hit')
+      return hit.data as T
+    }
     const data = await fn()
     this.cache.set(key, { data, expiresAt: Date.now() + this.ttlMs })
     return data

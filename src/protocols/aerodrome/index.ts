@@ -76,12 +76,13 @@ export class AerodromeMonitor implements Monitor {
       },
       coinGecko, rpc, logger,
     )
-    this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}` }, rpc)
+    this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}` }, rpc, logger)
     this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress }, deBank, logger)
-    this.protocolMonitor = new ProtocolMonitor({ protocolId: 'metronome-synth' }, deBank)
+    this.protocolMonitor = new ProtocolMonitor({ protocolId: cfg.metronomeProtocolId }, deBank, logger)
     this.walletMonitor = new WalletMonitor(
       { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, msUsdSymbol: 'msUSD', chain: cfg.chain },
       deBank,
+      logger,
     )
   }
 
@@ -171,6 +172,7 @@ export class AerodromeMonitor implements Monitor {
     } else {
       h.available = false
       h.consecutiveFailures++
+      this.logger.warn({ source: name, err: result.reason }, 'Data source error')
     }
   }
 }
