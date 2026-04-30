@@ -159,6 +159,29 @@ describe('evaluateAlerts — hack_mint', () => {
     evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
     expect(state.has(AlertType.HACK_MINT)).toBe(false)
   })
+
+  it('no sells confirmation when buys1h=0 (cannot compute meaningful ratio)', () => {
+    // 回归：buys1h=0 时 sells1h 不应作为倍数比与 sellsSpikeMultiplier 比较
+    const state = new Map()
+    const signals = makeSignals({
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 0, sells1h: 5, volume24h: 1_000, fetchedAt: new Date() },
+    })
+    evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
+    expect(state.has(AlertType.HACK_MINT)).toBe(false)
+  })
+
+  it('stale single-source confirmation does not persist to RED (accumulated state bug)', () => {
+    // 回归：过去某次 price 短暂触发后，只有 sells 当前活跃，不应升 RED
+    const state = stateWithAge(AlertType.HACK_MINT, 2 * 60 * 1000, ['price'])
+    const signals = makeSignals({
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 10, sells1h: 80, volume24h: 50_000, fetchedAt: new Date() },
+      price: { coingecko: 0.999, twap: 0.999, fetchedAt: new Date() }, // priceDropPct=0.1 < 2，price 不活跃
+    })
+    const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
+    const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
+    expect(alert?.level).toBe(AlertLevel.WARNING) // 仅 'sells' 当前活跃 → 1/2 → WARNING
+    expect(alert?.confirmations).toBe(1)
+  })
 })
 
 // ── LIQUIDITY DRAIN ───────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ global:
   #   - 数据采集、告警逻辑、通知（Server酱/Email）均正常运行
   #   - 执行器替换为 DryRunExecutor，只记录日志，不发送任何链上交易
   dry_run: true
-  log_level: "debug" # debug（最详细，开发/调试时用）| info | warn | error
+  log_level: "info" # debug（最详细，开发/调试时用）| info | warn | error
 
 sources:
   coingecko:

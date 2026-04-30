@@ -61,11 +61,15 @@ export class RpcClient {
   }
 
   /**
-   * 返回 token0 相对 token1 的 5 分钟 TWAP 价格。
-   * 使用 tick 算术计算：price = 1.0001^(avgTick)。
-   * 返回普通数字形式的价格（例如 msUSD 对应 0.9985）。
+   * 返回 token0 的人类可读 TWAP 价格（以 token1 计价）。
+   * tick 原始价格不含小数位差异，需乘以 10^(token0Decimals - token1Decimals) 修正。
    */
-  async getTwapPrice(poolAddress: `0x${string}`, twapWindowSeconds = 300): Promise<number> {
+  async getTwapPrice(
+    poolAddress: `0x${string}`,
+    token0Decimals: number,
+    token1Decimals: number,
+    twapWindowSeconds = 300,
+  ): Promise<number> {
     const secondsAgos = [twapWindowSeconds, 0] as const
     const { price } = await this.timed(
       'twap', { pool: poolAddress, windowSec: twapWindowSeconds },
@@ -80,7 +84,9 @@ export class RpcClient {
         const tick1 = tickCumulatives[1]
         if (tick0 === undefined || tick1 === undefined) throw new Error('observe returned empty')
         const avgTick = Number(tick1 - tick0) / twapWindowSeconds
-        return { avgTick, price: Math.pow(1.0001, avgTick) }
+        const rawPrice = Math.pow(1.0001, avgTick)
+        const price = rawPrice * Math.pow(10, token0Decimals - token1Decimals)
+        return { avgTick, price }
       },
       ({ avgTick, price }) => ({ avgTick, price }),
     )

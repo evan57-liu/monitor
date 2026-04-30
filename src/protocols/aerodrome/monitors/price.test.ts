@@ -17,6 +17,8 @@ const mockLogger = { warn: vi.fn(), debug: vi.fn() } as unknown as pino.Logger
 
 const cfg = {
   poolAddress: '0x0000000000000000000000000000000000000002' as `0x${string}`,
+  token0Decimals: 18,
+  token1Decimals: 6,
 }
 
 const makePoolData = (baseTokenPriceUsd: number) => ({

@@ -6,6 +6,8 @@ import type pino from 'pino'
 
 interface PriceMonitorConfig {
   poolAddress: `0x${string}`
+  token0Decimals: number
+  token1Decimals: number
 }
 
 export class PriceMonitor {
@@ -19,7 +21,7 @@ export class PriceMonitor {
   async check(): Promise<PriceSignal> {
     const [poolResult, twapResult] = await Promise.allSettled([
       this.coinGecko.getPoolData(this.cfg.poolAddress),
-      this.rpc.getTwapPrice(this.cfg.poolAddress),
+      this.rpc.getTwapPrice(this.cfg.poolAddress, this.cfg.token0Decimals, this.cfg.token1Decimals),
     ])
 
     if (poolResult.status === 'rejected') {

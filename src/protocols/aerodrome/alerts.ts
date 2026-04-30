@@ -1,5 +1,7 @@
 // src/protocols/aerodrome/alerts.ts
 import { AlertLevel, AlertType } from '../../core/types.js'
+
+const MSUSD_UNIT = 10n ** 18n
 import type { Alert } from '../../core/types.js'
 import type { AerodromeConfig } from '../../core/config.js'
 import type { AllSignals } from './types.js'
@@ -46,7 +48,7 @@ function buildAlert(
 
   const existing = state.get(type)
   if (existing) {
-    for (const c of confirmations) existing.confirmations.add(c)
+    existing.confirmations = confirmations  // 替换而非累积：确认集合反映当前状态，避免过期信号污染
     existing.lastData = data
   } else {
     state.set(type, { firstTriggered: now, confirmations, lastData: data })
@@ -89,11 +91,11 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
   const data: Record<string, unknown> = {}
 
   if (price?.coingecko !== null && price?.coingecko !== undefined) {
-    data.coingeckoPrice = price.coingecko
+    data.coingeckoPrice_usd = price.coingecko
     if (price.coingecko < t.priceThreshold) confirmations.add('coingecko')
   }
   if (price?.twap !== null && price?.twap !== undefined) {
-    data.twapPrice = price.twap
+    data.twapPrice_usd = price.twap
     if (price.twap < t.twapThreshold) confirmations.add('twap')
   }
   if (pool !== null) {
@@ -103,7 +105,7 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
     if (pool.poolPriceUsd < t.priceThreshold) confirmations.add('poolPrice')
   }
   if (position?.debankMsUsdPrice !== null && position?.debankMsUsdPrice !== undefined) {
-    data.debankPrice = position.debankMsUsdPrice
+    data.debankPrice_usd = position.debankMsUsdPrice
     if (position.debankMsUsdPrice < t.priceThreshold) confirmations.add('debank')
   }
 
@@ -121,7 +123,7 @@ function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: Aerodrome
     const prev = supply.previousSupply
     const increasePct = prev > 0n ? Number((supply.totalSupply - prev) * 10000n / prev) / 100 : 0
     data.supplyIncreasePct = increasePct
-    data.totalSupply = supply.totalSupply.toString()
+    data.totalSupply_msusd = Number(supply.totalSupply / MSUSD_UNIT)
     if (increasePct >= t.supplyIncreasePct) confirmations.add('supply')
   }
   if (price?.coingecko !== null && price?.coingecko !== undefined) {
@@ -129,8 +131,8 @@ function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: Aerodrome
     data.priceDropPct = dropPct
     if (dropPct >= t.priceDropPct) confirmations.add('price')
   }
-  if (pool !== null) {
-    const sellsRatio = pool.buys1h > 0 ? pool.sells1h / pool.buys1h : pool.sells1h
+  if (pool !== null && pool.buys1h > 0) {
+    const sellsRatio = pool.sells1h / pool.buys1h
     data.sellsRatio = sellsRatio
     if (sellsRatio >= t.sellsSpikeMultiplier) confirmations.add('sells')
   }
@@ -200,8 +202,8 @@ function evaluatePositionDrop(state: AlertState, signals: AllSignals, cfg: Aerod
   if (position.previousNetUsdValue !== null && position.previousNetUsdValue > 0) {
     const dropPct = ((position.previousNetUsdValue - position.netUsdValue) / position.previousNetUsdValue) * 100
     data.dropPct = dropPct
-    data.currentValue = position.netUsdValue
-    data.previousValue = position.previousNetUsdValue
+    data.currentValue_usd = position.netUsdValue
+    data.previousValue_usd = position.previousNetUsdValue
     if (dropPct >= t.dropPct) confirmations.add('position')
   }
 

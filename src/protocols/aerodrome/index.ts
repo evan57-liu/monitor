@@ -71,7 +71,11 @@ export class AerodromeMonitor implements Monitor {
       cfg.polling.positionMs, cfg.polling.protocolMs, cfg.polling.teamWalletsMs,
     )
     this.priceMonitor = new PriceMonitor(
-      { poolAddress: cfg.poolAddress as `0x${string}` },
+      {
+        poolAddress: cfg.poolAddress as `0x${string}`,
+        token0Decimals: 18, // msUSD 为 token0（地址较小），18位小数
+        token1Decimals: 6,  // USDC 为 token1（地址较大），6位小数
+      },
       coinGecko, rpc, logger,
     )
     this.poolMonitor = new PoolMonitor(

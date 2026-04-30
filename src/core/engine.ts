@@ -83,6 +83,10 @@ export class Engine {
       // 处理告警
       for (const alert of result.alerts) {
         insertAlert(this.cfg.db, alert)
+        this.cfg.logger.warn(
+          { type: alert.type, level: alert.level, confirmations: alert.confirmations, requiredConfirmations: alert.requiredConfirmations, sustainedMs: alert.sustainedMs, data: alert.data },
+          alert.title,
+        )
         if (alert.level === AlertLevel.RED || alert.level === AlertLevel.WARNING) {
           await this.cfg.notifier.notifyAlert(alert)
         }
