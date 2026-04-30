@@ -5,7 +5,6 @@ import type { PriceSignal } from '../types.js'
 import type pino from 'pino'
 
 interface PriceMonitorConfig {
-  msUsdAddress: `0x${string}`
   poolAddress: `0x${string}`
 }
 
@@ -18,20 +17,20 @@ export class PriceMonitor {
   ) {}
 
   async check(): Promise<PriceSignal> {
-    const [cgResult, twapResult] = await Promise.allSettled([
-      this.coinGecko.getTokenPrice(this.cfg.msUsdAddress),
+    const [poolResult, twapResult] = await Promise.allSettled([
+      this.coinGecko.getPoolData(this.cfg.poolAddress),
       this.rpc.getTwapPrice(this.cfg.poolAddress),
     ])
 
-    if (cgResult.status === 'rejected') {
-      this.logger.warn({ err: cgResult.reason }, 'CoinGecko getTokenPrice failed')
+    if (poolResult.status === 'rejected') {
+      this.logger.warn({ err: poolResult.reason }, 'CoinGecko getPoolData (price) failed')
     }
     if (twapResult.status === 'rejected') {
       this.logger.warn({ err: twapResult.reason }, 'RPC getTwapPrice failed')
     }
 
     const signal = {
-      coingecko: cgResult.status === 'fulfilled' ? cgResult.value.priceUsd : null,
+      coingecko: poolResult.status === 'fulfilled' ? poolResult.value.baseTokenPriceUsd : null,
       twap: twapResult.status === 'fulfilled' ? twapResult.value : null,
       fetchedAt: new Date(),
     }

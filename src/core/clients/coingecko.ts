@@ -1,5 +1,6 @@
 // src/core/clients/coingecko.ts
 import { withRetry } from '../retry.js'
+import { RequestCache } from '../cache.js'
 import type pino from 'pino'
 
 export interface CoinGeckoConfig {
@@ -26,19 +27,13 @@ export interface PoolData {
   fetchedAt: Date
 }
 
-interface CacheEntry<T> {
-  data: T
-  expiresAt: number
-}
-
 export class CoinGeckoClient {
-  private cache = new Map<string, CacheEntry<unknown>>()
-  private readonly ttlMs = 8_000 // 8 秒 — 适配 10 秒轮询间隔的安全缓存时长
+  private readonly requestCache = new RequestCache(8_000)
 
   constructor(private readonly cfg: CoinGeckoConfig, private readonly logger?: pino.Logger) {}
 
   async getTokenPrice(tokenAddress: string): Promise<TokenPrice> {
-    return this.cached(`token:${tokenAddress}`, async () => {
+    return this.requestCache.get(`token:${tokenAddress}`, async () => {
       const url = `${this.cfg.baseUrl}/onchain/simple/networks/base/token_price/${tokenAddress}`
       const raw = await this.fetch(url)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +48,7 @@ export class CoinGeckoClient {
   }
 
   async getPoolData(poolAddress: string): Promise<PoolData> {
-    return this.cached(`pool:${poolAddress}`, async () => {
+    return this.requestCache.get(`pool:${poolAddress}`, async () => {
       const url = `${this.cfg.baseUrl}/onchain/networks/base/pools/${poolAddress}`
       const raw = await this.fetch(url)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,16 +88,5 @@ export class CoinGeckoClient {
       },
       { maxAttempts: this.cfg.retryAttempts, baseDelayMs: 500, maxDelayMs: 5_000 },
     )
-  }
-
-  private async cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const hit = this.cache.get(key)
-    if (hit && hit.expiresAt > Date.now()) {
-      this.logger?.debug({ key }, 'CoinGecko cache hit')
-      return hit.data as T
-    }
-    const data = await fn()
-    this.cache.set(key, { data, expiresAt: Date.now() + this.ttlMs })
-    return data
   }
 }

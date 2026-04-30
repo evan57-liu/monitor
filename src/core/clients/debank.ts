@@ -1,5 +1,6 @@
 // src/core/clients/debank.ts
 import { withRetry } from '../retry.js'
+import { RequestCache } from '../cache.js'
 import type pino from 'pino'
 
 export interface DeBankConfig {
@@ -32,16 +33,13 @@ export interface WalletToken {
   chain: string
 }
 
-interface CacheEntry<T> { data: T; expiresAt: number }
-
 export class DeBankClient {
-  private cache = new Map<string, CacheEntry<unknown>>()
-  private readonly ttlMs = 50_000 // 约 50 秒，适配 60 秒轮询间隔
+  private readonly requestCache = new RequestCache(50_000)
 
   constructor(private readonly cfg: DeBankConfig, private readonly logger?: pino.Logger) {}
 
   async getUserProtocolPosition(walletAddress: string, protocolId: string, poolId?: string): Promise<UserProtocolPosition> {
-    return this.cached(`position:${walletAddress}:${protocolId}:${poolId ?? ''}`, async () => {
+    return this.requestCache.get(`position:${walletAddress}:${protocolId}:${poolId ?? ''}`, async () => {
       const url = `${this.cfg.baseUrl}/user/protocol?id=${walletAddress}&protocol_id=${protocolId}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = await this.fetch(url) as any
@@ -76,7 +74,7 @@ export class DeBankClient {
   }
 
   async getProtocolTvl(protocolId: string): Promise<ProtocolTvl> {
-    return this.cached(`protocol:${protocolId}`, async () => {
+    return this.requestCache.get(`protocol:${protocolId}`, async () => {
       const url = `${this.cfg.baseUrl}/protocol?id=${protocolId}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = await this.fetch(url) as any
@@ -88,7 +86,7 @@ export class DeBankClient {
   }
 
   async getWalletTokens(walletAddress: string, chain: string): Promise<WalletToken[]> {
-    return this.cached(`tokens:${walletAddress}:${chain}`, async () => {
+    return this.requestCache.get(`tokens:${walletAddress}:${chain}`, async () => {
       const url = `${this.cfg.baseUrl}/user/token_list?id=${walletAddress}&chain_id=${chain}&is_all=false`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = await this.fetch(url) as any[]
@@ -126,14 +124,4 @@ export class DeBankClient {
     )
   }
 
-  private async cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const hit = this.cache.get(key)
-    if (hit && hit.expiresAt > Date.now()) {
-      this.logger?.debug({ key }, 'DeBank cache hit')
-      return hit.data as T
-    }
-    const data = await fn()
-    this.cache.set(key, { data, expiresAt: Date.now() + this.ttlMs })
-    return data
-  }
 }

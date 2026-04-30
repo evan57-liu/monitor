@@ -51,6 +51,12 @@ export class AerodromeMonitor implements Monitor {
     price: initialHealth(), pool: initialHealth(), supply: initialHealth(),
     position: initialHealth(), protocol: initialHealth(), wallets: initialHealth(),
   }
+  // 各子监控器独立限速：记录上次实际执行时间
+  private readonly lastRunAt = new Map<SourceName, number>()
+  // 跨 tick 缓存：子监控器未运行时，使用上次信号参与告警评估
+  private readonly cachedSignals: AllSignals = {
+    price: null, pool: null, supply: null, position: null, protocol: null, wallets: null,
+  }
 
   constructor(
     private readonly cfg: AerodromeConfig,
@@ -65,7 +71,7 @@ export class AerodromeMonitor implements Monitor {
       cfg.polling.positionMs, cfg.polling.protocolMs, cfg.polling.teamWalletsMs,
     )
     this.priceMonitor = new PriceMonitor(
-      { msUsdAddress: cfg.msUsdAddress as `0x${string}`, poolAddress: cfg.poolAddress as `0x${string}` },
+      { poolAddress: cfg.poolAddress as `0x${string}` },
       coinGecko, rpc, logger,
     )
     this.poolMonitor = new PoolMonitor(
@@ -89,33 +95,44 @@ export class AerodromeMonitor implements Monitor {
   async init(): Promise<void> {}
 
   async poll(): Promise<PollResult> {
+    const tick = Date.now()
+    const p = this.cfg.polling
+
+    const runIf = <T>(
+      name: SourceName,
+      intervalMs: number,
+      fn: () => Promise<T>,
+    ): Promise<[PromiseSettledResult<T> | null, number]> => {
+      const last = this.lastRunAt.get(name)
+      if (last !== undefined && tick - last < intervalMs) {
+        return Promise.resolve([null, 0] as [null, number])
+      }
+      return timed(fn).then(([result, ms]) => {
+        this.lastRunAt.set(name, tick)
+        return [result, ms] as [PromiseSettledResult<T>, number]
+      })
+    }
+
     const [
       [priceR, priceMs], [poolR, poolMs], [supplyR, supplyMs],
       [positionR, positionMs], [protocolR, protocolMs], [walletsR, walletsMs],
     ] = await Promise.all([
-      timed(() => this.priceMonitor.check()),
-      timed(() => this.poolMonitor.check()),
-      timed(() => this.supplyMonitor.check()),
-      timed(() => this.positionMonitor.check()),
-      timed(() => this.protocolMonitor.check()),
-      timed(() => this.walletMonitor.check()),
+      runIf('price',    p.priceMs,      () => this.priceMonitor.check()),
+      runIf('pool',     p.poolMs,       () => this.poolMonitor.check()),
+      runIf('supply',   p.supplyMs,     () => this.supplyMonitor.check()),
+      runIf('position', p.positionMs,   () => this.positionMonitor.check()),
+      runIf('protocol', p.protocolMs,   () => this.protocolMonitor.check()),
+      runIf('wallets',  p.teamWalletsMs,() => this.walletMonitor.check()),
     ])
 
-    this.updateSourceHealth('price',    priceR,    priceMs)
-    this.updateSourceHealth('pool',     poolR,     poolMs)
-    this.updateSourceHealth('supply',   supplyR,   supplyMs)
-    this.updateSourceHealth('position', positionR, positionMs)
-    this.updateSourceHealth('protocol', protocolR, protocolMs)
-    this.updateSourceHealth('wallets',  walletsR,  walletsMs)
+    this.applyResult('price',    priceR,    priceMs)
+    this.applyResult('pool',     poolR,     poolMs)
+    this.applyResult('supply',   supplyR,   supplyMs)
+    this.applyResult('position', positionR, positionMs)
+    this.applyResult('protocol', protocolR, protocolMs)
+    this.applyResult('wallets',  walletsR,  walletsMs)
 
-    const signals: AllSignals = {
-      price:    priceR.status    === 'fulfilled' ? priceR.value    : null,
-      pool:     poolR.status     === 'fulfilled' ? poolR.value     : null,
-      supply:   supplyR.status   === 'fulfilled' ? supplyR.value   : null,
-      position: positionR.status === 'fulfilled' ? positionR.value : null,
-      protocol: protocolR.status === 'fulfilled' ? protocolR.value : null,
-      wallets:  walletsR.status  === 'fulfilled' ? walletsR.value  : null,
-    }
+    const signals: AllSignals = { ...this.cachedSignals }
 
     const alerts = evaluateAlerts(this.alertState, signals, this.cfg, this.id)
 
@@ -160,6 +177,14 @@ export class AerodromeMonitor implements Monitor {
   }
 
   async shutdown(): Promise<void> {}
+
+  // 子监控器运行结果统一处理：跳过则不更新，否则刷新健康状态和缓存信号
+  private applyResult(name: SourceName, result: PromiseSettledResult<unknown> | null, ms: number): void {
+    if (result === null) return
+    this.updateSourceHealth(name, result, ms)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(this.cachedSignals as any)[name] = result.status === 'fulfilled' ? result.value : null
+  }
 
   private updateSourceHealth(name: SourceName, result: PromiseSettledResult<unknown>, latencyMs: number): void {
     const h = this.sourceHealth[name]

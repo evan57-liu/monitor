@@ -81,18 +81,11 @@ protocols:
     # Metronome 团队/国库钱包（用于内部人退出检测）
     # 留空则 insider_exit 告警不会触发
     team_wallets:
-      [
-        "0xcefc8b799a8ee5d9b312aeca73262645d664aaf7",
-        "0x7501bc8bb51616f79bfa524e464fb7b41f0b10fb",
-        "0x8845126640b36df1d24bf3df9b2903fd4c730fe6",
-        "0xc89a0e6334535b34ef40d40fb82d28209df52dcf",
-        "0xf4c6d8547bc99ba986c9f45a2ebd867a23efd0d7",
-        "0xb3983cddba4b127960a4cdd531ab989264509e23",
-      ]
+      []
 
     polling:
-      price_ms: 10000 # 10秒 — CoinGecko 价格（最高频，快速感知脱锚）
-      pool_ms: 30000 # 30秒 — 池子储备 + 买入/卖出量
+      price_ms: 60000 # 60秒 — CoinGecko 价格（已合并到 getPoolData，与 pool 共享一次请求）
+      pool_ms: 60000 # 60秒 — 池子储备 + 买入/卖出量
       supply_ms: 60000 # 60秒 — 通过 RPC 获取 totalSupply（检测黑客铸造）
       position_ms: 60000 # 60秒 — 通过 DeBank 获取你的仓位价值
       protocol_ms: 120000 # 2分钟 — Metronome 协议 TVL（检测流动性枯竭）

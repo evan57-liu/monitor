@@ -6,7 +6,7 @@ import type { RpcClient } from '../../../core/clients/rpc.js'
 import type pino from 'pino'
 
 const mockCoinGecko = {
-  getTokenPrice: vi.fn(),
+  getPoolData: vi.fn(),
 } as unknown as CoinGeckoClient
 
 const mockRpc = {
@@ -16,15 +16,24 @@ const mockRpc = {
 const mockLogger = { warn: vi.fn(), debug: vi.fn() } as unknown as pino.Logger
 
 const cfg = {
-  msUsdAddress: '0x0000000000000000000000000000000000000001' as `0x${string}`,
   poolAddress: '0x0000000000000000000000000000000000000002' as `0x${string}`,
 }
 
+const makePoolData = (baseTokenPriceUsd: number) => ({
+  baseTokenPriceUsd,
+  reserveInUsd: 1_000_000,
+  quotePriceUsd: 1.0,
+  volume24h: 50_000,
+  buys1h: 10,
+  sells1h: 5,
+  buys24h: 80,
+  sells24h: 40,
+  fetchedAt: new Date(),
+})
+
 describe('PriceMonitor', () => {
-  it('returns coingecko price as primary', async () => {
-    vi.mocked(mockCoinGecko.getTokenPrice).mockResolvedValue({
-      priceUsd: 0.9985, fetchedAt: new Date(),
-    })
+  it('returns coingecko price from pool data as primary', async () => {
+    vi.mocked(mockCoinGecko.getPoolData).mockResolvedValue(makePoolData(0.9985))
     vi.mocked(mockRpc.getTwapPrice).mockResolvedValue(0.999)
 
     const monitor = new PriceMonitor(cfg, mockCoinGecko, mockRpc, mockLogger)
@@ -34,7 +43,7 @@ describe('PriceMonitor', () => {
   })
 
   it('returns null coingecko when CoinGecko fails, twap still works', async () => {
-    vi.mocked(mockCoinGecko.getTokenPrice).mockRejectedValue(new Error('api down'))
+    vi.mocked(mockCoinGecko.getPoolData).mockRejectedValue(new Error('api down'))
     vi.mocked(mockRpc.getTwapPrice).mockResolvedValue(0.9982)
 
     const monitor = new PriceMonitor(cfg, mockCoinGecko, mockRpc, mockLogger)
@@ -44,7 +53,7 @@ describe('PriceMonitor', () => {
   })
 
   it('returns fully null signal when both fail', async () => {
-    vi.mocked(mockCoinGecko.getTokenPrice).mockRejectedValue(new Error('fail'))
+    vi.mocked(mockCoinGecko.getPoolData).mockRejectedValue(new Error('fail'))
     vi.mocked(mockRpc.getTwapPrice).mockRejectedValue(new Error('fail'))
 
     const monitor = new PriceMonitor(cfg, mockCoinGecko, mockRpc, mockLogger)
