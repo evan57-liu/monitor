@@ -128,6 +128,8 @@ export interface RemoveLiquidityParams {
   amount1Min: bigint
   /** 基点，例如 100 = 1% */
   slippageBps: number
+  /** 移除流动性并收取代币后销毁 NFT position，默认 true */
+  burnAfterRemove?: boolean
 }
 
 export interface SwapParams {
@@ -136,6 +138,8 @@ export interface SwapParams {
   tokenOut: `0x${string}`
   amountIn: bigint
   amountOutMin: bigint
+  /** Universal Router path 中的 3 字节 poolParam（CL factory 标志位 | tickSpacing） */
+  poolParam: number
   batchIndex: number
   totalBatches: number
 }

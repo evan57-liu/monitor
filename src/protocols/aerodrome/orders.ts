@@ -41,6 +41,7 @@ export function generateWithdrawalOrders(
     amount0Min: 0n,
     amount1Min: 0n,
     slippageBps: cfg.execution.swapSlippageBps,
+    burnAfterRemove: true, // 紧急撤出时清理 NFT position
   }
   orders.push(makeOrder(alert, cfg, groupId, seq++, OrderType.REMOVE_LIQUIDITY, removeParams, deadline, now))
 
@@ -60,6 +61,7 @@ export function generateWithdrawalOrders(
       tokenOut: cfg.usdcAddress as `0x${string}`,
       amountIn,
       amountOutMin,
+      poolParam: cfg.execution.swapPoolParam,
       batchIndex: i,
       totalBatches: cfg.execution.swapBatchCount,
     }

@@ -37,6 +37,8 @@ export interface AerodromeConfig {
   routerAddress: string
   positionManagerAddress: string
   lpTokenId: number
+  debankProtocolId: string
+  metronomeProtocolId: string
   teamWallets: string[]
   polling: { priceMs: number; poolMs: number; supplyMs: number; positionMs: number; protocolMs: number; teamWalletsMs: number }
   alerts: {
@@ -46,7 +48,7 @@ export interface AerodromeConfig {
     insiderExit: { largeOutflowUsd: number; priceDropPct: number }
     positionDrop: { dropPct: number; windowSeconds: number }
   }
-  execution: { swapBatchCount: number; swapSlippageBps: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number }
+  execution: { swapBatchCount: number; swapSlippageBps: number; swapPoolParam: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number }
 }
 
 // ── 加载器 ────────────────────────────────────────────────────────────────────
@@ -113,6 +115,8 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
         routerAddress: ae.router_address,
         positionManagerAddress: ae.position_manager_address,
         lpTokenId: ae.lp_token_id,
+        debankProtocolId: ae.debank_protocol_id as string,
+        metronomeProtocolId: ae.metronome_protocol_id as string,
         teamWallets: ae.team_wallets as string[],
         polling: { priceMs: ae.polling.price_ms, poolMs: ae.polling.pool_ms, supplyMs: ae.polling.supply_ms, positionMs: ae.polling.position_ms, protocolMs: ae.polling.protocol_ms, teamWalletsMs: ae.polling.team_wallets_ms },
         alerts: {
@@ -122,7 +126,7 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
           insiderExit: { largeOutflowUsd: ae.alerts.insider_exit.large_outflow_usd, priceDropPct: ae.alerts.insider_exit.price_drop_pct },
           positionDrop: { dropPct: ae.alerts.position_drop.drop_pct, windowSeconds: ae.alerts.position_drop.window_seconds },
         },
-        execution: { swapBatchCount: ae.execution.swap_batch_count, swapSlippageBps: ae.execution.swap_slippage_bps, gasMultiplier: ae.execution.gas_multiplier, deadlineSeconds: ae.execution.deadline_seconds, maxGasGwei: ae.execution.max_gas_gwei },
+        execution: { swapBatchCount: ae.execution.swap_batch_count, swapSlippageBps: ae.execution.swap_slippage_bps, swapPoolParam: ae.execution.swap_pool_param as number, gasMultiplier: ae.execution.gas_multiplier, deadlineSeconds: ae.execution.deadline_seconds, maxGasGwei: ae.execution.max_gas_gwei },
       },
     },
     storage: { sqlitePath: y.storage.sqlite_path, retentionDays: { priceHistory: y.storage.retention_days.price_history, poolSnapshots: y.storage.retention_days.pool_snapshots, healthSnapshots: y.storage.retention_days.health_snapshots } },
