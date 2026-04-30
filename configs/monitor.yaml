@@ -39,7 +39,7 @@ notifications:
     smtp_port: 587
     from: "liulei552211@gmail.com"
     to:
-      - "liuchonglin1@email.com" # 可填多个收件人，每行一个 "- 地址"
+      - "liuchonglin1@gmail.com" # 可填多个收件人，每行一个 "- 地址"
     retry_attempts: 5
     daily_summary_hour: 9 # 每天 9 点发送每日运营总结邮件
   healthchecks:

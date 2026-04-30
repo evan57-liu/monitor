@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import { getLogger } from '../logger.js'
 import type { NotificationChannel, Notification } from '../types.js'
 
 interface EmailConfig {
@@ -35,7 +36,8 @@ export class EmailChannel implements NotificationChannel {
           html: markdownToHtml(notification.body),
         })
         return true
-      } catch {
+      } catch (err) {
+        getLogger().error({ err, attempt, retryAttempts: this.cfg.retryAttempts }, 'Email send failed')
         if (attempt === this.cfg.retryAttempts) return false
         await sleep(attempt * 2000)
       }
@@ -47,7 +49,8 @@ export class EmailChannel implements NotificationChannel {
     try {
       await this.transporter.verify()
       return true
-    } catch {
+    } catch (err) {
+      getLogger().error({ err }, 'Email channel test (SMTP verify) failed')
       return false
     }
   }
