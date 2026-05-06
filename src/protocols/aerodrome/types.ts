@@ -20,21 +20,18 @@ export interface PoolSignal {
 
 export interface SupplySignal {
   totalSupply: bigint
-  previousSupply: bigint | null  // 首次读取时为 null
   fetchedAt: Date
 }
 
 export interface PositionSignal {
   netUsdValue: number
   rewardUsdValue: number           // AERO 等奖励的 USD 价值（透明拆分）
-  previousNetUsdValue: number | null
   debankMsUsdPrice: number | null  // DeBank 返回的 msUSD 价格，null = 数据不可用
   fetchedAt: Date
 }
 
 export interface ProtocolSignal {
   tvlUsd: number
-  previousTvlUsd: number | null
   fetchedAt: Date
 }
 

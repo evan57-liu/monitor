@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Engine } from './engine.js'
 import { AlertLevel, AlertType, OrderStatus, OrderType } from './types.js'
-import type { Monitor, PollResult, Executor, ExecutionOrder, UnstakeParams } from './types.js'
+import type { Monitor, PollResult, Executor, ExecutionOrder, UnstakeParams, PriceFloorGuardParams, SwapParams } from './types.js'
 import type { Notifier } from './notify/notifier.js'
 import type Database from 'better-sqlite3'
 import { openDb, closeDb } from './storage/index.js'
@@ -128,6 +128,52 @@ describe('Engine', () => {
     await engine.runCycleForTest('test')
     // Second order should NOT be executed because first failed
     expect(executor.execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('guard FAILED aborts subsequent swap orders in same group', async () => {
+    const executor = makeExecutor()
+    vi.mocked(executor.execute)
+      .mockResolvedValueOnce({ status: OrderStatus.CONFIRMED, executedAt: new Date() })  // unstake
+      .mockResolvedValueOnce({ status: OrderStatus.CONFIRMED, executedAt: new Date() })  // remove
+      .mockResolvedValueOnce({ status: OrderStatus.FAILED, error: 'price_floor_breach', executedAt: new Date() })  // guard
+      // swap should never be called
+
+    const alertId = crypto.randomUUID()
+    insertAlert(db, {
+      id: alertId, type: AlertType.DEPEG, level: AlertLevel.RED, protocol: 'test',
+      title: 'T', message: 'M', data: {}, triggeredAt: new Date(),
+      confirmations: 3, requiredConfirmations: 3, sustainedMs: 200_000, requiredSustainedMs: 180_000,
+    })
+    const guardParams: PriceFloorGuardParams = {
+      poolAddress: '0x1' as `0x${string}`,
+      token0Decimals: 18, token1Decimals: 6,
+      twapWindowSeconds: 300, floor: 0.92, failClosed: true,
+    }
+    const swapParams: SwapParams = {
+      routerAddress: '0x2' as `0x${string}`,
+      tokenIn: '0x3' as `0x${string}`,
+      tokenOut: '0x4' as `0x${string}`,
+      amountIn: 1000n,
+      amountOutMin: 990n,
+      poolParam: 50,
+      batchIndex: 0,
+      totalBatches: 1,
+    }
+    const orders: ExecutionOrder[] = [
+      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o2', alertId, protocol: 'test', type: OrderType.REMOVE_LIQUIDITY, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o3', alertId, protocol: 'test', type: OrderType.PRICE_FLOOR_GUARD, sequence: 3, groupId: 'g1', params: guardParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o4', alertId, protocol: 'test', type: OrderType.SWAP, sequence: 4, groupId: 'g1', params: swapParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+    ]
+    const monitor = makeMonitor('test', { orders })
+    const engine = new Engine({ db, executor, notifier: makeNotifier(), logger })
+    engine.register(monitor)
+    await engine.initAll()
+    await engine.runCycleForTest('test')
+    // unstake + remove + guard = 3 calls; swap must NOT be called
+    expect(executor.execute).toHaveBeenCalledTimes(3)
+    const calls = vi.mocked(executor.execute).mock.calls
+    expect((calls[2]?.[0] as ExecutionOrder).type).toBe(OrderType.PRICE_FLOOR_GUARD)
   })
 
   it('applies circuit breaker after 5 consecutive poll failures', async () => {

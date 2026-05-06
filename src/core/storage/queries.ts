@@ -76,16 +76,41 @@ export function insertSupplyHistory(db: Database.Database, r: SupplyRecord): voi
   ).run(r.token, r.totalSupply.toString(), r.chain, r.recordedAt.toISOString())
 }
 
-export function getRecentSupply(
-  db: Database.Database,
-  token: string,
-  limit: number,
-): Array<{ totalSupply: string; recordedAt: string }> {
-  return db
-    .prepare(
-      `SELECT total_supply as totalSupply, recorded_at as recordedAt FROM supply_history WHERE token = ? ORDER BY recorded_at DESC LIMIT ?`,
-    )
-    .all(token, limit) as Array<{ totalSupply: string; recordedAt: string }>
+export function getSupplyAtOrBefore(db: Database.Database, token: string, before: Date): bigint | null {
+  const row = db
+    .prepare(`SELECT total_supply FROM supply_history WHERE token = ? AND recorded_at <= ? ORDER BY recorded_at DESC LIMIT 1`)
+    .get(token, before.toISOString()) as { total_supply: string } | undefined
+  return row !== undefined ? BigInt(row.total_supply) : null
+}
+
+// ── 协议 TVL ──────────────────────────────────────────────────────────────────
+
+export function insertProtocolTvl(db: Database.Database, r: { protocol: string; tvlUsd: number; recordedAt: Date }): void {
+  db.prepare(`INSERT INTO protocol_tvl_history (protocol, tvl_usd, recorded_at) VALUES (?, ?, ?)`).run(
+    r.protocol, r.tvlUsd, r.recordedAt.toISOString(),
+  )
+}
+
+export function getProtocolTvlAtOrBefore(db: Database.Database, protocol: string, before: Date): number | null {
+  const row = db
+    .prepare(`SELECT tvl_usd FROM protocol_tvl_history WHERE protocol = ? AND recorded_at <= ? ORDER BY recorded_at DESC LIMIT 1`)
+    .get(protocol, before.toISOString()) as { tvl_usd: number } | undefined
+  return row !== undefined ? row.tvl_usd : null
+}
+
+// ── 仓位 ──────────────────────────────────────────────────────────────────────
+
+export function insertPositionSnapshot(db: Database.Database, r: { protocol: string; wallet: string; netUsdValue: number; recordedAt: Date }): void {
+  db.prepare(`INSERT INTO position_history (protocol, wallet, net_usd_value, recorded_at) VALUES (?, ?, ?, ?)`).run(
+    r.protocol, r.wallet, r.netUsdValue, r.recordedAt.toISOString(),
+  )
+}
+
+export function getPositionAtOrBefore(db: Database.Database, protocol: string, wallet: string, before: Date): number | null {
+  const row = db
+    .prepare(`SELECT net_usd_value FROM position_history WHERE protocol = ? AND wallet = ? AND recorded_at <= ? ORDER BY recorded_at DESC LIMIT 1`)
+    .get(protocol, wallet, before.toISOString()) as { net_usd_value: number } | undefined
+  return row !== undefined ? row.net_usd_value : null
 }
 
 // ── 告警 ──────────────────────────────────────────────────────────────────────

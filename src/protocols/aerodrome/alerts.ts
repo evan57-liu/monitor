@@ -1,10 +1,12 @@
 // src/protocols/aerodrome/alerts.ts
 import { AlertLevel, AlertType } from '../../core/types.js'
+import type { PriceFloorResult } from './price-floor.js'
 
 const MSUSD_UNIT = 10n ** 18n
 import type { Alert } from '../../core/types.js'
 import type { AerodromeConfig } from '../../core/config.js'
 import type { AllSignals } from './types.js'
+import type { HistoryStore } from './history-store.js'
 
 export type AlertStateEntry = {
   firstTriggered: Date
@@ -18,16 +20,18 @@ export function evaluateAlerts(
   signals: AllSignals,
   cfg: AerodromeConfig,
   protocol: string,
+  historyStore: HistoryStore,
+  walletAddress: string,
 ): Alert[] {
   const now = new Date()
   const alerts: Alert[] = []
 
   const push = (result: Alert | null) => { if (result) alerts.push(result) }
   push(evaluateDepeg(state, signals, cfg, protocol, now))
-  push(evaluateHackMint(state, signals, cfg, protocol, now))
-  push(evaluateLiquidityDrain(state, signals, cfg, protocol, now))
+  push(evaluateHackMint(state, signals, cfg, protocol, now, historyStore))
+  push(evaluateLiquidityDrain(state, signals, cfg, protocol, now, historyStore))
   push(evaluateInsiderExit(state, signals, cfg, protocol, now))
-  push(evaluatePositionDrop(state, signals, cfg, protocol, now))
+  push(evaluatePositionDrop(state, signals, cfg, protocol, now, historyStore, walletAddress))
 
   return alerts
 }
@@ -112,18 +116,22 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
     `msUSD Depeg: ${price?.coingecko !== null && price?.coingecko !== undefined ? `$${price.coingecko.toFixed(4)}` : 'price unavailable'}`, now)
 }
 
-function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
+function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date, historyStore: HistoryStore): Alert | null {
   const { supply, price, pool } = signals
   const t = cfg.alerts.hackMint
   const confirmations = new Set<string>()
   const data: Record<string, unknown> = {}
 
-  if (supply !== null && supply.previousSupply !== null) {
-    const prev = supply.previousSupply
-    const increasePct = prev > 0n ? Number((supply.totalSupply - prev) * 10000n / prev) / 100 : 0
-    data.supplyIncreasePct = increasePct
-    data.totalSupply_msusd = Number(supply.totalSupply / MSUSD_UNIT)
-    if (increasePct >= t.supplyIncreasePct) confirmations.add('supply')
+  if (supply !== null) {
+    const windowStart = new Date(now.getTime() - t.supplyWindowSeconds * 1000)
+    const baseline = historyStore.getSupplyAtOrBefore(cfg.msUsdAddress, windowStart)
+    if (baseline !== null && baseline > 0n) {
+      const increasePct = Number((supply.totalSupply - baseline) * 10000n / baseline) / 100
+      data.supplyIncreasePct = increasePct
+      data.supplyWindowSeconds = t.supplyWindowSeconds
+      data.totalSupply_msusd = Number(supply.totalSupply / MSUSD_UNIT)
+      if (increasePct >= t.supplyIncreasePct) confirmations.add('supply')
+    }
   }
   if (price?.coingecko !== null && price?.coingecko !== undefined) {
     const dropPct = (1 - price.coingecko) * 100
@@ -139,17 +147,22 @@ function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: Aerodrome
   return buildAlert(AlertType.HACK_MINT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'msUSD Hack Mint Detected', now)
 }
 
-function evaluateLiquidityDrain(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
+function evaluateLiquidityDrain(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date, historyStore: HistoryStore): Alert | null {
   const { protocol: proto, pool } = signals
   const t = cfg.alerts.liquidityDrain
   const confirmations = new Set<string>()
   const data: Record<string, unknown> = {}
 
-  if (proto !== null && proto.previousTvlUsd !== null) {
-    const dropPct = ((proto.previousTvlUsd - proto.tvlUsd) / proto.previousTvlUsd) * 100
-    data.tvlDropPct = dropPct
-    data.tvlUsd = proto.tvlUsd
-    if (dropPct >= t.tvlDropPct) confirmations.add('tvl')
+  if (proto !== null) {
+    const windowStart = new Date(now.getTime() - t.tvlWindowSeconds * 1000)
+    const baseline = historyStore.getProtocolTvlAtOrBefore(protocol, windowStart)
+    if (baseline !== null && baseline > 0) {
+      const dropPct = ((baseline - proto.tvlUsd) / baseline) * 100
+      data.tvlDropPct = dropPct
+      data.tvlWindowSeconds = t.tvlWindowSeconds
+      data.tvlUsd = proto.tvlUsd
+      if (dropPct >= t.tvlDropPct) confirmations.add('tvl')
+    }
   }
   if (pool !== null) {
     data.msUsdRatio = pool.msUsdRatio
@@ -190,7 +203,36 @@ function evaluateInsiderExit(state: AlertState, signals: AllSignals, cfg: Aerodr
   return buildAlert(AlertType.INSIDER_EXIT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'Insider Exit Signal', now)
 }
 
-function evaluatePositionDrop(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
+// 用 WITHDRAWAL_ABORTED 而非 DATA_SOURCE_FAILURE，确保审计日志语义清晰。
+export function buildPriceFloorAbortAlert(
+  triggeringAlerts: Alert[],
+  floor: PriceFloorResult,
+  floorValue: number,
+  protocol: string,
+): Alert {
+  const now = new Date()
+  const priceStr = floor.effectivePrice !== null ? `$${floor.effectivePrice.toFixed(4)}` : 'unavailable'
+  const floorStr = `$${floorValue.toFixed(2)}`
+  const title = floor.reason === 'all_sources_unavailable'
+    ? '⚠️ ALL PRICE SOURCES DOWN — Withdrawal aborted, MANUAL ACTION MAY BE REQUIRED'
+    : `Withdrawal aborted: price floor breach (${priceStr} < ${floorStr})`
+  return {
+    id: crypto.randomUUID(),
+    type: AlertType.WITHDRAWAL_ABORTED,
+    level: AlertLevel.WARNING,
+    protocol,
+    title,
+    message: `**Reason:** ${floor.reason}\n**Effective price:** ${priceStr}\n**Floor:** ${floorStr}\n**Sources:** ${JSON.stringify(floor.sources)}\n**Suppressed alerts:** ${triggeringAlerts.map(a => a.type).join(', ')}`,
+    data: { reason: floor.reason, effectivePrice: floor.effectivePrice, floorValue, sources: floor.sources, triggeringTypes: triggeringAlerts.map(a => a.type) },
+    triggeredAt: now,
+    confirmations: 0,
+    requiredConfirmations: 0,
+    sustainedMs: 0,
+    requiredSustainedMs: 0,
+  }
+}
+
+function evaluatePositionDrop(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date, historyStore: HistoryStore, walletAddress: string): Alert | null {
   const { position } = signals
   const t = cfg.alerts.positionDrop
   if (!position) { state.delete(AlertType.POSITION_DROP); return null }
@@ -198,14 +240,19 @@ function evaluatePositionDrop(state: AlertState, signals: AllSignals, cfg: Aerod
   const confirmations = new Set<string>()
   const data: Record<string, unknown> = {}
 
-  if (position.previousNetUsdValue !== null && position.previousNetUsdValue > 0) {
-    const dropPct = ((position.previousNetUsdValue - position.netUsdValue) / position.previousNetUsdValue) * 100
+  const windowStart = new Date(now.getTime() - t.windowSeconds * 1000)
+  const baseline = historyStore.getPositionAtOrBefore(protocol, walletAddress, windowStart)
+  if (baseline !== null && baseline > 0) {
+    const dropPct = ((baseline - position.netUsdValue) / baseline) * 100
     data.dropPct = dropPct
+    data.windowSeconds = t.windowSeconds
     data.currentValue_usd = position.netUsdValue
-    data.previousValue_usd = position.previousNetUsdValue
+    data.baselineValue_usd = baseline
     if (dropPct >= t.dropPct) confirmations.add('position')
   }
 
-  const dropStr = typeof data.dropPct === 'number' ? data.dropPct.toFixed(1) : '?'
-  return buildAlert(AlertType.POSITION_DROP, state, confirmations, data, { sustainedSeconds: 0, requiredConfirmations: 1 }, protocol, `Position Value Drop: -${dropStr}%`, now)
+  const dropStr = typeof data.dropPct === 'number' ? (data.dropPct as number).toFixed(1) : '?'
+  return buildAlert(AlertType.POSITION_DROP, state, confirmations, data,
+    { sustainedSeconds: t.sustainedSeconds, requiredConfirmations: t.requiredConfirmations },
+    protocol, `Position Value Drop: -${dropStr}%`, now)
 }

@@ -48,15 +48,22 @@ src/protocols/aerodrome/
 
 ## 告警系统
 
-5 种红色告警类型 → 触发自动撤出：
-- `depeg` — 价格低于 $0.992，多源确认，持续 3 分钟
-- `hack_mint` — totalSupply 增加 15%，价格下跌，卖出激增
-- `liquidity_drain` — Metronome TVL 下降 30%，池子失衡
-- `insider_exit` — 团队钱包大额流出 + 价格下跌
-- `position_drop` — 你的 LP 价值 1 小时内下跌 10%
+5 种告警类型，RED 级通过两道闸才生成撤出订单：
 
-所有告警在升级为 RED 之前均需多源确认。
-详见 `src/protocols/aerodrome/alerts.ts` 中的状态机。
+- `depeg` — 价格低于 $0.986797，4 选 3 多源确认，持续 3 分钟
+- `hack_mint` — totalSupply 在过去 1 小时（`supply_window_seconds`）内增加 > 15%，价格跌至 $0.98 以下，卖出激增
+- `liquidity_drain` — Metronome TVL 在过去 1 小时（`tvl_window_seconds`）内下降 > 30%，池子失衡
+- `insider_exit` — 团队钱包大额流出 + 价格下跌
+- `position_drop` — LP 仓位在过去 1 小时（`window_seconds`）内价值下跌 > 配置阈值（最后防线，独立触发）
+
+**两道闸（撤出必须同时通过）**：
+
+1. **复合确认**：`depeg RED` 必须与 `hack_mint / liquidity_drain / insider_exit` 任一 RED 同时存在才能触发撤出；`position_drop RED` 可独立触发。
+2. **价格地板**：`max(coingecko, twap, debank) ≥ $0.92`；三源全不可用时拒绝撤出（fail-closed），写 `WITHDRAWAL_ABORTED` 告警通知运维人工处理。
+
+撤出序列：unstake → remove_liquidity → `[price_floor_guard + swap] × 3 批`。每批 swap 前门控订单重新检查链上 TWAP + DeBank 价格，破地板则中止剩余批次。
+
+详见 `src/protocols/aerodrome/alerts.ts`（状态机）和 `src/protocols/aerodrome/index.ts`（两道闸入口）。
 
 ## DRY_RUN 模式
 
@@ -79,6 +86,15 @@ tail -f logs/stdout.log
 
 # 查询最近告警
 sqlite3 data/monitor.db "SELECT triggered_at, type, level, title FROM alerts ORDER BY triggered_at DESC LIMIT 10;"
+
+# 查看供应量历史（验证 hack_mint 窗口基准）
+sqlite3 data/monitor.db "SELECT recorded_at, total_supply FROM supply_history ORDER BY recorded_at DESC LIMIT 10;"
+
+# 查看 TVL 历史（验证 liquidity_drain 窗口基准）
+sqlite3 data/monitor.db "SELECT recorded_at, tvl_usd FROM protocol_tvl_history WHERE protocol='aerodrome-msusd-usdc' ORDER BY recorded_at DESC LIMIT 10;"
+
+# 查看仓位历史（验证 position_drop 窗口基准）
+sqlite3 data/monitor.db "SELECT recorded_at, net_usd_value FROM position_history ORDER BY recorded_at DESC LIMIT 10;"
 ```
 
 ## 文档维护规则

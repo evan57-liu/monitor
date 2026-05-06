@@ -1,16 +1,16 @@
 // src/protocols/aerodrome/monitors/protocol.ts
 import type { DeBankClient } from '../../../core/clients/debank.js'
 import type { ProtocolSignal } from '../types.js'
+import type { HistoryStore } from '../history-store.js'
 import type pino from 'pino'
 
-interface ProtocolMonitorConfig { protocolIds: string[] }
+interface ProtocolMonitorConfig { protocolIds: string[]; monitorId: string }
 
 export class ProtocolMonitor {
-  private previousTvl: number | null = null
-
   constructor(
     private readonly cfg: ProtocolMonitorConfig,
     private readonly debank: DeBankClient,
+    private readonly historyStore: HistoryStore,
     private readonly logger?: pino.Logger,
   ) {}
 
@@ -30,17 +30,18 @@ export class ProtocolMonitor {
 
     const successful = tvls.filter((v): v is number => v !== null)
     const tvlUsd = successful.reduce((sum, v) => sum + v, 0)
-    const signal: ProtocolSignal = {
-      tvlUsd,
-      previousTvlUsd: this.previousTvl,
-      fetchedAt: new Date(),
+
+    const now = new Date()
+    // 只在至少有一个成功时落库，避免全失败时把 0 污染历史基准
+    if (successful.length > 0) {
+      this.historyStore.insertProtocolTvl(this.cfg.monitorId, tvlUsd, now)
     }
+
+    const signal: ProtocolSignal = { tvlUsd, fetchedAt: now }
     this.logger?.debug(
-      { protocolIds: this.cfg.protocolIds, fetched: successful.length, tvlUsd, previousTvlUsd: this.previousTvl },
+      { protocolIds: this.cfg.protocolIds, fetched: successful.length, tvlUsd },
       'ProtocolMonitor signal',
     )
-    // 只在至少有一个成功时更新，避免全部失败时以 0 污染历史基准
-    if (successful.length > 0) this.previousTvl = tvlUsd
     return signal
   }
 }

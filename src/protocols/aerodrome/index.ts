@@ -1,6 +1,6 @@
 // src/protocols/aerodrome/index.ts
 import { AlertLevel } from '../../core/types.js'
-import type { Monitor, PollResult, DataSourceStatus } from '../../core/types.js'
+import type { Alert, ExecutionOrder, Monitor, PollResult, DataSourceStatus } from '../../core/types.js'
 import type { AerodromeConfig } from '../../core/config.js'
 import type { CoinGeckoClient } from '../../core/clients/coingecko.js'
 import type { DeBankClient } from '../../core/clients/debank.js'
@@ -12,10 +12,13 @@ import { SupplyMonitor } from './monitors/supply.js'
 import { PositionMonitor } from './monitors/position.js'
 import { ProtocolMonitor } from './monitors/protocol.js'
 import { WalletMonitor } from './monitors/wallets.js'
-import { evaluateAlerts } from './alerts.js'
+import { evaluateAlerts, buildPriceFloorAbortAlert } from './alerts.js'
+import { applyCompoundConfirmation } from './compound-confirmation.js'
 import { generateWithdrawalOrders } from './orders.js'
+import { checkPriceFloor } from './price-floor.js'
 import type { AlertState } from './alerts.js'
 import type { AllSignals } from './types.js'
+import type { HistoryStore } from './history-store.js'
 
 // market = CoinGecko + TWAP + 链上余额（产出 price 和 pool 两个信号）
 const SOURCE_NAMES = ['market', 'supply', 'position', 'protocol', 'wallets'] as const
@@ -62,8 +65,9 @@ export class AerodromeMonitor implements Monitor {
     coinGecko: CoinGeckoClient,
     deBank: DeBankClient,
     rpc: RpcClient,
-    walletAddress: string,
+    private readonly walletAddress: string,
     private readonly logger: pino.Logger,
+    private readonly historyStore: HistoryStore,
   ) {
     this.pollIntervalMs = Math.min(
       cfg.polling.marketMs, cfg.polling.supplyMs,
@@ -79,9 +83,9 @@ export class AerodromeMonitor implements Monitor {
       },
       coinGecko, rpc, logger,
     )
-    this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}` }, rpc, logger)
-    this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress }, deBank, logger)
-    this.protocolMonitor = new ProtocolMonitor({ protocolIds: cfg.metronomeProtocolIds }, deBank, logger)
+    this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}`, chain: cfg.chain }, rpc, historyStore, logger)
+    this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress, monitorId: this.id }, deBank, historyStore, logger)
+    this.protocolMonitor = new ProtocolMonitor({ protocolIds: cfg.metronomeProtocolIds, monitorId: this.id }, deBank, historyStore, logger)
     this.walletMonitor = new WalletMonitor(
       { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, msUsdSymbol: 'msUSD', chain: cfg.chain },
       deBank,
@@ -139,12 +143,12 @@ export class AerodromeMonitor implements Monitor {
 
     const signals: AllSignals = { ...this.cachedSignals }
 
-    const alerts = evaluateAlerts(this.alertState, signals, this.cfg, this.id)
+    const alerts = evaluateAlerts(this.alertState, signals, this.cfg, this.id, this.historyStore, this.walletAddress)
 
     this.logger.debug({
       latencyMs: { market: marketMs, supply: supplyMs, position: positionMs, protocol: protocolMs, wallets: walletsMs },
-      supply: signals.supply ? { totalSupply: signals.supply.totalSupply.toString(), previousSupply: signals.supply.previousSupply?.toString() ?? null } : null,
-      protocol: signals.protocol ? { tvlUsd: signals.protocol.tvlUsd, previousTvlUsd: signals.protocol.previousTvlUsd } : null,
+      supply: signals.supply ? { totalSupply: signals.supply.totalSupply.toString() } : null,
+      protocol: signals.protocol ? { tvlUsd: signals.protocol.tvlUsd } : null,
       pool: signals.pool ? { buys1h: signals.pool.buys1h, sells1h: signals.pool.sells1h, volume24h: signals.pool.volume24h, reserveInUsd: signals.pool.reserveInUsd } : null,
       wallets: signals.wallets?.map(w => ({ address: w.walletAddress, msUsdAmount: w.msUsdAmount, previousMsUsdAmount: w.previousMsUsdAmount })) ?? null,
     }, 'Poll detail')
@@ -161,14 +165,25 @@ export class AerodromeMonitor implements Monitor {
       sources: Object.fromEntries(SOURCE_NAMES.map(k => [k, this.sourceHealth[k].available])),
     }, 'Poll complete')
 
-    // 估算 msUSD 余额用于生成订单（以仓位价值作为代理）
-    const msUsdBalance = signals.position
-      ? BigInt(Math.floor(signals.position.netUsdValue * 1e18))
-      : 0n
+    const redAlerts = alerts.filter(a => a.level === AlertLevel.RED)
+    const triggering = applyCompoundConfirmation(redAlerts, this.logger)
 
-    const orders = alerts
-      .filter(a => a.level === AlertLevel.RED)
-      .flatMap(a => generateWithdrawalOrders(a, this.cfg, msUsdBalance))
+    let orders: ExecutionOrder[] = []
+    if (triggering.length > 0) {
+      const msUsdBalance = signals.position
+        ? BigInt(Math.floor(signals.position.netUsdValue * 1e18))
+        : 0n
+      const floorResult = checkPriceFloor(signals, this.cfg.execution.minPriceToSwap, this.cfg.execution.priceFloorRequired)
+      if (!floorResult.ok) {
+        this.logger.error(
+          { effectivePrice: floorResult.effectivePrice, sources: floorResult.sources, floor: this.cfg.execution.minPriceToSwap, reason: floorResult.reason, triggeringTypes: triggering.map(a => a.type) },
+          'Price floor breach — withdrawal aborted',
+        )
+        alerts.push(buildPriceFloorAbortAlert(triggering, floorResult, this.cfg.execution.minPriceToSwap, this.id))
+      } else {
+        orders = generateWithdrawalOrders(triggering[0]!, this.cfg, msUsdBalance, floorResult.effectivePrice!)
+      }
+    }
 
     return {
       alerts,

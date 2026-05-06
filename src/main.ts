@@ -18,6 +18,7 @@ import { LiveExecutor } from './core/executor/index.js'
 import { MacKeychainReader } from './core/keychain.js'
 import { Engine } from './core/engine.js'
 import { AerodromeMonitor } from './protocols/aerodrome/index.js'
+import { SqliteHistoryStore } from './protocols/aerodrome/history-store.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -121,6 +122,7 @@ async function main(): Promise<void> {
       rpc,
       walletAddress,
       logger,
+      new SqliteHistoryStore(db),
     )
     engine.register(aerodromeMonitor)
     logger.info({ monitorId: aerodromeMonitor.id }, 'Protocol registered')

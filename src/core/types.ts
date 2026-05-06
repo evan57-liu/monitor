@@ -25,12 +25,14 @@ export enum AlertType {
   INSIDER_EXIT = 'insider_exit',
   POSITION_DROP = 'position_drop',
   DATA_SOURCE_FAILURE = 'data_source_failure',
+  WITHDRAWAL_ABORTED = 'withdrawal_aborted',
 }
 
 export enum OrderType {
   UNSTAKE = 'unstake',
   REMOVE_LIQUIDITY = 'remove_liquidity',
   SWAP = 'swap',
+  PRICE_FLOOR_GUARD = 'price_floor_guard',
 }
 
 export enum OrderStatus {
@@ -103,7 +105,7 @@ export interface ExecutionOrder {
   sequence: number
   /** 相同 groupId 的订单按顺序执行；失败则中止 */
   groupId: string
-  params: UnstakeParams | RemoveLiquidityParams | SwapParams
+  params: UnstakeParams | RemoveLiquidityParams | SwapParams | PriceFloorGuardParams
   /** 超过此 Gas 价格（gwei）拒绝执行 */
   maxGasGwei: number
   /** 交易的 Unix 时间戳截止时间 */
@@ -142,6 +144,15 @@ export interface SwapParams {
   poolParam: number
   batchIndex: number
   totalBatches: number
+}
+
+export interface PriceFloorGuardParams {
+  poolAddress: `0x${string}`
+  token0Decimals: number
+  token1Decimals: number
+  twapWindowSeconds: number
+  floor: number
+  failClosed: boolean
 }
 
 // ── 通知 ──────────────────────────────────────────────────────────────────────

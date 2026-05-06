@@ -44,7 +44,7 @@ notifications:
     daily_summary_hour: 9 # 每天 9 点发送每日运营总结邮件
   healthchecks:
     enabled: true
-    interval_seconds: 60 # 每 60 秒发一次心跳；超时未收到心跳则发邮件告警
+    interval_seconds: 240 # 每 240 秒发一次心跳；超时未收到心跳则发邮件告警
     # 配置步骤：
     # 1. 在 https://healthchecks.io 创建新 Check，Period=5min，Grace=5min
     # 2. 复制 Ping URL 填入 configs/.env 的 DM_HEALTHCHECKS_PING_URL
@@ -98,21 +98,21 @@ protocols:
 
     alerts:
       depeg:
-        price_threshold: 1.01 #0.986797 # CoinGecko 价格低于此值时触发预警
-        twap_threshold: 1.01 #0.986797 # 链上 TWAP 低于此值作为第二确认
+        price_threshold: 0.986797 # CoinGecko 价格低于此值时触发预警
+        twap_threshold: 0.986797 # 链上 TWAP 低于此值作为第二确认
         pool_imbalance_pct: 75 # 池中 msUSD 占比 > 75% 作为第三确认（单边失衡）
         sustained_seconds: 180 # 达到 required_confirmations 后，持续 3 分钟才升级为 RED
         required_confirmations: 3 # 4 个独立数据源（coingecko/twap/pool-imbalance/debank），4 中取 3
 
       hack_mint:
-        supply_increase_pct: 15 # totalSupply 在时间窗口内增加 15% 触发
-        supply_window_seconds: 3600 # 时间窗口：1 小时
+        supply_increase_pct: 15 # 在 supply_window_seconds 窗口内 totalSupply 增加 > 15% 触发
+        supply_window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对
         price_drop_pct: 2 # 同时价格下跌 > 2%（铸币后抛售导致）
         sells_spike_multiplier: 5 # 同时卖出量是正常水平的 5 倍
 
       liquidity_drain:
-        tvl_drop_pct: 30 # Metronome 整体协议 TVL 1 小时内下降 > 30%
-        tvl_window_seconds: 3600 # 时间窗口：1 小时
+        tvl_drop_pct: 30 # 在 tvl_window_seconds 窗口内 Metronome 协议 TVL 下降 > 30% 触发
+        tvl_window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对
         pool_msusd_ratio_pct: 70 # 池子 msUSD 占比 > 70%（USDC 被大量抽走）
         sells_buys_ratio: 3 # 卖出/买入比 > 3（恐慌性出逃）
 
@@ -121,11 +121,13 @@ protocols:
         price_drop_pct: 1 # 同时价格下跌 > 1%
 
       position_drop:
-        drop_pct: 10 # 你的 LP 仓位 1 小时内价值下跌 > 10%
-        window_seconds: 3600 # 时间窗口：1 小时（最后防线，不需要多源确认）
+        drop_pct: 0.01 # 在 window_seconds 窗口内 LP 仓位价值下跌 > 此百分比触发
+        window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对（最后防线）
+        sustained_seconds: 1 # 持续满足此秒数才升 RED，防止瞬间误触
+        required_confirmations: 1 # 仅 DeBank 一个数据源
 
     execution:
-      swap_batch_count: 1 # 分 3 批兑换 msUSD → USDC，降低单笔滑点影响
+      swap_batch_count: 1 # 分 3 批兑换 msUSD → USDC，批次之间重新检查价格地板
       swap_slippage_bps: 100 # 最大允许滑点：1%（100 bps = 1%）
       # poolParam = tickSpacing（低 20 位）| factorySelector（高 4 位，0 = CL_FACTORY_1 / 0x100000 = CL_FACTORY_2 / 0x200000 = CL_FACTORY_3）
       # 0x32 = 50（tickSpacing=50，factorySelector=0 → 默认 CL_FACTORY_1），与上方 pool_address 0x7501... 所属工厂/参数一致
@@ -133,6 +135,8 @@ protocols:
       gas_multiplier: 1.2 # Gas 估算结果乘以 1.2 倍，确保交易及时打包
       deadline_seconds: 300 # 交易有效期：5 分钟，超时自动失效
       max_gas_gwei: 50 # Gas 价格上限：超过 50 gwei 则拒绝执行，等待网络拥堵缓解
+      min_price_to_swap: 0.92 # 价格地板：max(coingecko,twap,debank) < 此值时中止所有撤出操作
+      price_floor_required: true # fail-closed：三个价格源全部不可用时也中止撤出（设为 false 则三源全失败时强制继续）
 
 storage:
   sqlite_path: "data/monitor.db"
@@ -140,3 +144,5 @@ storage:
     price_history: 30 # 价格记录保留 30 天
     pool_snapshots: 30 # 池子快照保留 30 天
     health_snapshots: 7 # 健康状态快照保留 7 天
+    tvl_history: 30 # protocol_tvl_history 表保留 30 天（供 liquidity_drain 窗口查询）
+    position_history: 30 # position_history 表保留 30 天（供 position_drop 窗口查询）

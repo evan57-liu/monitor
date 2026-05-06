@@ -22,7 +22,7 @@ export interface AppConfig {
     healthchecks: { enabled: boolean; pingUrl: string; intervalSeconds: number }
   }
   protocols: { aerodromeMusdUsdc: AerodromeConfig }
-  storage: { sqlitePath: string; retentionDays: { priceHistory: number; poolSnapshots: number; healthSnapshots: number } }
+  storage: { sqlitePath: string; retentionDays: { priceHistory: number; poolSnapshots: number; healthSnapshots: number; tvlHistory: number; positionHistory: number } }
   secrets: { coingeckoApiKey: string; debankAccessKey: string; privateKey: string }
 }
 
@@ -47,9 +47,9 @@ export interface AerodromeConfig {
     hackMint: { supplyIncreasePct: number; supplyWindowSeconds: number; priceDropPct: number; sellsSpikeMultiplier: number }
     liquidityDrain: { tvlDropPct: number; tvlWindowSeconds: number; poolMsUsdRatioPct: number; sellsBuysRatio: number }
     insiderExit: { largeOutflowUsd: number; priceDropPct: number }
-    positionDrop: { dropPct: number; windowSeconds: number }
+    positionDrop: { dropPct: number; windowSeconds: number; sustainedSeconds: number; requiredConfirmations: number }
   }
-  execution: { swapBatchCount: number; swapSlippageBps: number; swapPoolParam: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number }
+  execution: { swapBatchCount: number; swapSlippageBps: number; swapPoolParam: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number; minPriceToSwap: number; priceFloorRequired: boolean }
 }
 
 // ── 加载器 ────────────────────────────────────────────────────────────────────
@@ -126,12 +126,12 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
           hackMint: { supplyIncreasePct: ae.alerts.hack_mint.supply_increase_pct, supplyWindowSeconds: ae.alerts.hack_mint.supply_window_seconds, priceDropPct: ae.alerts.hack_mint.price_drop_pct, sellsSpikeMultiplier: ae.alerts.hack_mint.sells_spike_multiplier },
           liquidityDrain: { tvlDropPct: ae.alerts.liquidity_drain.tvl_drop_pct, tvlWindowSeconds: ae.alerts.liquidity_drain.tvl_window_seconds, poolMsUsdRatioPct: ae.alerts.liquidity_drain.pool_msusd_ratio_pct, sellsBuysRatio: ae.alerts.liquidity_drain.sells_buys_ratio },
           insiderExit: { largeOutflowUsd: ae.alerts.insider_exit.large_outflow_usd, priceDropPct: ae.alerts.insider_exit.price_drop_pct },
-          positionDrop: { dropPct: ae.alerts.position_drop.drop_pct, windowSeconds: ae.alerts.position_drop.window_seconds },
+          positionDrop: { dropPct: ae.alerts.position_drop.drop_pct, windowSeconds: ae.alerts.position_drop.window_seconds, sustainedSeconds: ae.alerts.position_drop.sustained_seconds as number, requiredConfirmations: ae.alerts.position_drop.required_confirmations as number },
         },
-        execution: { swapBatchCount: ae.execution.swap_batch_count, swapSlippageBps: ae.execution.swap_slippage_bps, swapPoolParam: ae.execution.swap_pool_param as number, gasMultiplier: ae.execution.gas_multiplier, deadlineSeconds: ae.execution.deadline_seconds, maxGasGwei: ae.execution.max_gas_gwei },
+        execution: { swapBatchCount: ae.execution.swap_batch_count, swapSlippageBps: ae.execution.swap_slippage_bps, swapPoolParam: ae.execution.swap_pool_param as number, gasMultiplier: ae.execution.gas_multiplier, deadlineSeconds: ae.execution.deadline_seconds, maxGasGwei: ae.execution.max_gas_gwei, minPriceToSwap: ae.execution.min_price_to_swap as number, priceFloorRequired: ae.execution.price_floor_required as boolean },
       },
     },
-    storage: { sqlitePath: y.storage.sqlite_path, retentionDays: { priceHistory: y.storage.retention_days.price_history, poolSnapshots: y.storage.retention_days.pool_snapshots, healthSnapshots: y.storage.retention_days.health_snapshots } },
+    storage: { sqlitePath: y.storage.sqlite_path, retentionDays: { priceHistory: y.storage.retention_days.price_history, poolSnapshots: y.storage.retention_days.pool_snapshots, healthSnapshots: y.storage.retention_days.health_snapshots, tvlHistory: (y.storage.retention_days.tvl_history as number | undefined) ?? 30, positionHistory: (y.storage.retention_days.position_history as number | undefined) ?? 30 } },
     secrets,
   }
 }

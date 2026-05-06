@@ -91,6 +91,25 @@ function migrate(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_exec_alert ON executions(alert_id);
 
+    CREATE TABLE IF NOT EXISTS protocol_tvl_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      protocol TEXT NOT NULL,
+      tvl_usd REAL NOT NULL,
+      recorded_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_tvl_protocol_time ON protocol_tvl_history(protocol, recorded_at);
+
+    CREATE TABLE IF NOT EXISTS position_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      protocol TEXT NOT NULL,
+      wallet TEXT NOT NULL,
+      net_usd_value REAL NOT NULL,
+      recorded_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_position_protocol_wallet_time ON position_history(protocol, wallet, recorded_at);
+
     CREATE TABLE IF NOT EXISTS health_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       monitor_id TEXT NOT NULL,
@@ -105,9 +124,12 @@ function migrate(db: Database.Database): void {
 
 export function runRetentionCleanup(
   db: Database.Database,
-  days: { priceHistory: number; poolSnapshots: number; healthSnapshots: number },
+  days: { priceHistory: number; poolSnapshots: number; healthSnapshots: number; tvlHistory: number; positionHistory: number },
 ): void {
   db.prepare(`DELETE FROM price_history WHERE recorded_at < datetime('now', '-${days.priceHistory} days')`).run()
   db.prepare(`DELETE FROM pool_snapshots WHERE recorded_at < datetime('now', '-${days.poolSnapshots} days')`).run()
   db.prepare(`DELETE FROM health_snapshots WHERE checked_at < datetime('now', '-${days.healthSnapshots} days')`).run()
+  db.prepare(`DELETE FROM supply_history WHERE recorded_at < datetime('now', '-${days.priceHistory} days')`).run()
+  db.prepare(`DELETE FROM protocol_tvl_history WHERE recorded_at < datetime('now', '-${days.tvlHistory} days')`).run()
+  db.prepare(`DELETE FROM position_history WHERE recorded_at < datetime('now', '-${days.positionHistory} days')`).run()
 }

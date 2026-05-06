@@ -97,7 +97,7 @@ npm install
 
 # 验证依赖安装正确
 npm run typecheck   # 期望: 0 errors
-npm test            # 期望: 72 tests passed
+npm test            # 期望: 136 tests passed
 ```
 
 ---
@@ -195,11 +195,11 @@ protocols:
 ```yaml
 alerts:
   depeg:
-    price_threshold: 0.992    # 低于 $0.992 触发 → 可调整
-    twap_threshold: 0.992     # 链上 TWAP 确认阈值
-    pool_imbalance_pct: 75    # 池中 msUSD > 75% 确认池子失衡
-    sustained_seconds: 180    # 须持续 3 分钟才升级为 RED
-    required_confirmations: 4 # 5 个数据源（coingecko/twap/pool/poolPrice/debank），5 中取 4
+    price_threshold: 0.986797  # 低于此价格触发（msUSD 正常溢价下界）
+    twap_threshold: 0.986797   # 链上 TWAP 确认阈值
+    pool_imbalance_pct: 75     # 池中 msUSD > 75% 确认池子失衡
+    sustained_seconds: 180     # 须持续 3 分钟才升级为 RED
+    required_confirmations: 3  # 4 个数据源（coingecko/twap/pool/debank），4 中取 3
 
   hack_mint:
     supply_increase_pct: 15   # totalSupply 1小时内增加 15%
@@ -216,7 +216,10 @@ alerts:
     price_drop_pct: 1         # 同时价格下跌 1%
 
   position_drop:
-    drop_pct: 10              # 你的仓位价值 1小时内下跌 10%
+    drop_pct: 10              # 你的仓位价值下跌 10%
+    window_seconds: 3600      # 1 小时时间窗口
+    sustained_seconds: 300    # 须持续 5 分钟才升级为 RED（最后防线）
+    required_confirmations: 1 # 单源（仓位数据）
 ```
 
 ### 4.6 执行参数配置
@@ -229,7 +232,11 @@ execution:
   gas_multiplier: 1.2       # Gas 估算乘以 1.2 倍确保打包
   deadline_seconds: 300     # 交易有效期 5 分钟
   max_gas_gwei: 50          # Gas 超过 50 gwei 时拒绝执行
+  min_price_to_swap: 0.92   # 价格地板：msUSD < $0.92 时中止撤出（保护深度脱锚时不认亏）
+  price_floor_required: true # true = fail-closed：三源全不可用时也中止；false = 不可用时放行（不推荐）
 ```
+
+**`min_price_to_swap` 说明**：每批 swap 前通过链上 TWAP + DeBank 重新检查，低于地板则中止剩余批次。msUSD 历史上曾两次跌至 $0.42 后完全恢复——此参数确保深度脱锚时不会锁定亏损。
 
 ---
 
@@ -769,7 +776,7 @@ curl -s "https://pro-openapi.debank.com/v1/user/protocol?id=aerodrome&user_addr=
 ```bash
 # 检查数据库是否正常创建和写入
 sqlite3 data/monitor.db ".tables"
-# 期望: alerts  executions  health_snapshots  pool_snapshots  price_history  supply_history
+# 期望: alerts  executions  health_snapshots  pool_snapshots  position_history  price_history  protocol_tvl_history  supply_history
 
 # 检查最近价格记录（10秒一条）
 sqlite3 data/monitor.db \
@@ -1074,6 +1081,23 @@ sqlite3 data/monitor.db \
    GROUP BY monitor_id;"
 ```
 
+### 告警窗口基准查询（验证 hack_mint / liquidity_drain / position_drop 的 1 小时窗口起点）
+
+```bash
+# 供应量历史（hack_mint 窗口基准：取 now-1h 最近一条）
+sqlite3 data/monitor.db \
+  "SELECT recorded_at, total_supply FROM supply_history ORDER BY recorded_at DESC LIMIT 10;"
+
+# Metronome TVL 历史（liquidity_drain 窗口基准）
+sqlite3 data/monitor.db \
+  "SELECT recorded_at, tvl_usd FROM protocol_tvl_history
+   WHERE protocol='aerodrome-msusd-usdc' ORDER BY recorded_at DESC LIMIT 10;"
+
+# LP 仓位价值历史（position_drop 窗口基准）
+sqlite3 data/monitor.db \
+  "SELECT recorded_at, net_usd_value FROM position_history ORDER BY recorded_at DESC LIMIT 10;"
+```
+
 ---
 
 ## 14. 故障排查
@@ -1187,7 +1211,7 @@ src/
       rpc.ts       ← viem publicClient（RPC 调用 + TWAP 计算）
 
     storage/
-      index.ts     ← SQLite 初始化 + 6 张表 Schema
+      index.ts     ← SQLite 初始化 + 8 张表 Schema
       queries.ts   ← 类型安全的查询函数
 
     executor/
@@ -1245,16 +1269,23 @@ Engine.executeOrderGroup（按序执行，失败中止）
 
 ## 16. 告警规则详解
 
+### 撤出两道闸
+
+RED 级告警不会直接触发撤出，必须同时通过两道检查：
+
+**闸 1 — 复合确认**：`depeg RED` 必须与攻击类 RED（`hack_mint` / `liquidity_drain` / `insider_exit` 任一）同时存在，才生成撤出订单。单纯的脱锚可能是市场短暂波动或数据源故障，不应在无攻击证据时自动清仓。`position_drop RED` 作为最后防线，可单独触发。
+
+**闸 2 — 价格地板**：`max(coingecko, twap, debank) ≥ $0.92`，低于则中止撤出并写 `WITHDRAWAL_ABORTED` 警告（运维收邮件）。每批 swap 前门控订单重新检查。msUSD 历史上曾两次跌至 $0.42 后完全恢复，此机制防止在底部锁定亏损。
+
 ### Depeg（脱锚）
 
-**触发条件**（5 个数据源中 4 个确认 + 持续 3 分钟）：
-1. CoinGecko 价格 < $0.992
-2. Aerodrome 池子 TWAP < $0.992
+**触发条件**（4 个数据源中 3 个确认 + 持续 3 分钟）：
+1. CoinGecko 价格 < $0.986797
+2. Aerodrome 池子 TWAP < $0.986797
 3. 池子中 msUSD 占比 > 75%（单边失衡）
-4. 池子内推导价格 < $0.992
-5. DeBank 报价 < $0.992
+4. DeBank 报价 < $0.986797
 
-**误报防护**：5 个独立数据源中 4 个确认（coingecko/twap/pool/poolPrice/debank），避免单源故障误报；3 分钟持续时间避免瞬时价格波动
+**注**：单独满足此告警不会触发撤出（需攻击类告警佐证），但邮件通知照发。
 
 ### Hack Mint（黑客铸造）
 
@@ -1280,10 +1311,11 @@ Engine.executeOrderGroup（按序执行，失败中止）
 
 ### Position Drop（仓位异常）
 
-**触发条件**（立即，无延迟）：
-1. 你的 LP 仓位 1 小时内价值下跌 > 10%
+**触发条件**（单源确认 + 持续 5 分钟）：
+1. 你的 LP 仓位价值下跌 > 10%
+2. 状态持续 ≥ 5 分钟（避免 DeBank 数据短暂波动误报）
 
-这是最后的防线——其他所有检测都失败时，仓位本身的异常会触发撤出。
+这是最后的防线，可**独立**触发撤出（无需攻击类佐证），但价格地板（闸 2）同样生效。
 
 ---
 
@@ -1295,9 +1327,11 @@ Engine.executeOrderGroup（按序执行，失败中止）
 |------|------|------|
 | 价格采集间隔 | 10 秒 | 每 10 秒一次 CoinGecko 价格 |
 | Depeg 持续时间 | 180 秒 | 满足条件后 3 分钟才触发 RED |
+| Position Drop 持续时间 | 300 秒 | 仓位下跌需持续 5 分钟才触发 RED |
+| 价格地板 | $0.92 | msUSD 低于此价格时中止撤出（深度脱锚保护） |
 | 熔断器阈值 | 5 次 | 连续 5 次失败触发熔断 |
 | 熔断恢复时间 | 5 分钟 | 暂停后自动恢复 |
-| 分批兑换数量 | 3 批 | msUSD 分 3 批换 USDC |
+| 撤出订单数 | 8 条 | unstake + remove + (guard+swap)×3 |
 | 最大 Gas | 50 gwei | 超过则拒绝执行 |
 | 心跳间隔 | 60 秒 | Healthchecks.io 每分钟一次 |
 

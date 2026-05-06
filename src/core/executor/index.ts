@@ -21,6 +21,7 @@ import type {
   UnstakeParams,
   RemoveLiquidityParams,
   SwapParams,
+  PriceFloorGuardParams,
 } from '../types.js'
 import type pino from 'pino'
 
@@ -53,6 +54,10 @@ const UNIVERSAL_ROUTER_ABI = parseAbi([
   'error InvalidEthSender()',
   'error ExecutionFailed(uint256 commandIndex, bytes message)',
   'error BalanceTooLow()',
+])
+
+const CL_POOL_OBSERVE_ABI = parseAbi([
+  'function observe(uint32[] secondsAgos) view returns (int56[] tickCumulatives, uint160[] secondsPerLiquidityCumulativeX128s)',
 ])
 
 /** Universal Router command byte: V3_SWAP_EXACT_IN */
@@ -102,6 +107,8 @@ export class LiveExecutor implements Executor {
           return await this.executeRemoveLiquidity(order, order.params as RemoveLiquidityParams)
         case OrderType.SWAP:
           return await this.executeSwap(order, order.params as SwapParams)
+        case OrderType.PRICE_FLOOR_GUARD:
+          return await this.executeGuard(order, order.params as PriceFloorGuardParams)
         default:
           throw new Error(`Unknown order type: ${order.type as string}`)
       }
@@ -221,6 +228,36 @@ export class LiveExecutor implements Executor {
 
     const txHash = await this.walletClient.writeContract(callArgs)
     return this.waitForReceipt(txHash)
+  }
+
+  private async executeGuard(order: ExecutionOrder, params: PriceFloorGuardParams): Promise<ExecutionResult> {
+    let twapPrice: number | null = null
+    try {
+      const [prevCum, currCum] = await this.publicClient.readContract({
+        address: params.poolAddress,
+        abi: CL_POOL_OBSERVE_ABI,
+        functionName: 'observe',
+        args: [[params.twapWindowSeconds, 0]],
+      }).then(r => [r[0][0]!, r[0][1]!] as [bigint, bigint])
+      const avgTick = Number(currCum - prevCum) / params.twapWindowSeconds
+      // price = 1.0001^avgTick × 10^(token0Dec - token1Dec)
+      twapPrice = Math.pow(1.0001, avgTick) * Math.pow(10, params.token0Decimals - params.token1Decimals)
+      this.logger.debug({ orderId: order.id, twapPrice, floor: params.floor }, 'Price floor guard TWAP check')
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      this.logger.error({ orderId: order.id, error }, 'Price floor guard TWAP fetch failed')
+      if (params.failClosed) {
+        return { status: OrderStatus.FAILED, error: `price_floor_guard_twap_unavailable: ${error}`, executedAt: new Date() }
+      }
+      // failClosed=false：抓不到价格时放行（有意取舍，默认不启用）
+      return { status: OrderStatus.CONFIRMED, executedAt: new Date() }
+    }
+    if (twapPrice < params.floor) {
+      const error = `price_floor_breach: twap=${twapPrice.toFixed(4)} < floor=${params.floor}`
+      this.logger.error({ orderId: order.id, twapPrice, floor: params.floor }, 'Price floor guard triggered — aborting remaining swaps')
+      return { status: OrderStatus.FAILED, error, executedAt: new Date() }
+    }
+    return { status: OrderStatus.CONFIRMED, executedAt: new Date() }
   }
 
   private async waitForReceipt(txHash: `0x${string}`): Promise<ExecutionResult> {
