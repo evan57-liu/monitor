@@ -8,6 +8,7 @@ vi.mock('nodemailer', () => ({
     createTransport: vi.fn(() => ({
       sendMail: vi.fn().mockResolvedValue({ messageId: 'test-id' }),
       verify: vi.fn().mockResolvedValue(true),
+      close: vi.fn(),
     })),
   },
 }))
@@ -29,7 +30,7 @@ describe('EmailChannel', () => {
   it('converts markdown body to HTML for email', async () => {
     const nodemailer = await import('nodemailer')
     const sendMailMock = vi.fn().mockResolvedValue({ messageId: 'x' })
-    vi.mocked(nodemailer.default.createTransport).mockReturnValue({ sendMail: sendMailMock, verify: vi.fn() } as never)
+    vi.mocked(nodemailer.default.createTransport).mockReturnValue({ sendMail: sendMailMock, verify: vi.fn(), close: vi.fn() } as never)
 
     const channel = new EmailChannel(cfg)
     await channel.send({ title: 'Test', body: '**bold text**', level: AlertLevel.WARNING })
@@ -43,6 +44,7 @@ describe('EmailChannel', () => {
     vi.mocked(nodemailer.default.createTransport).mockReturnValue({
       sendMail: vi.fn().mockRejectedValue(new Error('smtp fail')),
       verify: vi.fn(),
+      close: vi.fn(),
     } as never)
     const channel = new EmailChannel(cfg)
     const ok = await channel.send({ title: 'Test', body: 'body', level: AlertLevel.RED })

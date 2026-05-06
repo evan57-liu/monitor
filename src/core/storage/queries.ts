@@ -125,7 +125,7 @@ export function insertExecution(
     order.type,
     order.sequence,
     order.groupId,
-    JSON.stringify(order.params),
+    JSON.stringify(order.params, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
     result.status,
     result.txHash ?? null,
     result.gasUsed?.toString() ?? null,

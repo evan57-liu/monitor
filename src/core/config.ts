@@ -36,11 +36,12 @@ export interface AerodromeConfig {
   usdcAddress: string
   routerAddress: string
   positionManagerAddress: string
+  permit2Address: string
   lpTokenId: number
   debankProtocolId: string
-  metronomeProtocolId: string
+  metronomeProtocolIds: string[]
   teamWallets: string[]
-  polling: { priceMs: number; poolMs: number; supplyMs: number; positionMs: number; protocolMs: number; teamWalletsMs: number }
+  polling: { marketMs: number; supplyMs: number; positionMs: number; protocolMs: number; teamWalletsMs: number }
   alerts: {
     depeg: { priceThreshold: number; twapThreshold: number; poolImbalancePct: number; sustainedSeconds: number; requiredConfirmations: number }
     hackMint: { supplyIncreasePct: number; supplyWindowSeconds: number; priceDropPct: number; sellsSpikeMultiplier: number }
@@ -114,11 +115,12 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
         usdcAddress: ae.usdc_address,
         routerAddress: ae.router_address,
         positionManagerAddress: ae.position_manager_address,
+        permit2Address: ae.permit2_address,
         lpTokenId: ae.lp_token_id,
         debankProtocolId: ae.debank_protocol_id as string,
-        metronomeProtocolId: ae.metronome_protocol_id as string,
+        metronomeProtocolIds: ae.metronome_protocol_ids as string[],
         teamWallets: ae.team_wallets as string[],
-        polling: { priceMs: ae.polling.price_ms, poolMs: ae.polling.pool_ms, supplyMs: ae.polling.supply_ms, positionMs: ae.polling.position_ms, protocolMs: ae.polling.protocol_ms, teamWalletsMs: ae.polling.team_wallets_ms },
+        polling: { marketMs: ae.polling.market_ms, supplyMs: ae.polling.supply_ms, positionMs: ae.polling.position_ms, protocolMs: ae.polling.protocol_ms, teamWalletsMs: ae.polling.team_wallets_ms },
         alerts: {
           depeg: { priceThreshold: ae.alerts.depeg.price_threshold, twapThreshold: ae.alerts.depeg.twap_threshold, poolImbalancePct: ae.alerts.depeg.pool_imbalance_pct, sustainedSeconds: ae.alerts.depeg.sustained_seconds, requiredConfirmations: ae.alerts.depeg.required_confirmations },
           hackMint: { supplyIncreasePct: ae.alerts.hack_mint.supply_increase_pct, supplyWindowSeconds: ae.alerts.hack_mint.supply_window_seconds, priceDropPct: ae.alerts.hack_mint.price_drop_pct, sellsSpikeMultiplier: ae.alerts.hack_mint.sells_spike_multiplier },

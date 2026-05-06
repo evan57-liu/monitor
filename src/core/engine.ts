@@ -80,7 +80,7 @@ export class Engine {
       // 存储健康快照
       insertHealthSnapshot(this.cfg.db, monitorId, result.health)
 
-      // 处理告警
+      const notifyPromises: Promise<void>[] = []
       for (const alert of result.alerts) {
         insertAlert(this.cfg.db, alert)
         this.cfg.logger.warn(
@@ -88,14 +88,16 @@ export class Engine {
           alert.title,
         )
         if (alert.level === AlertLevel.RED || alert.level === AlertLevel.WARNING) {
-          await this.cfg.notifier.notifyAlert(alert)
+          notifyPromises.push(this.cfg.notifier.notifyAlert(alert))
         }
       }
 
-      // 执行订单（组内顺序执行，失败则中止）
+      // 订单执行优先于通知等待（撤出操作不能被 email 重试拖延）
       if (result.orders.length > 0) {
         await this.executeOrderGroup(result.orders)
       }
+
+      await Promise.allSettled(notifyPromises)
     } catch (err) {
       reg.consecutiveFailures++
       this.cfg.logger.error({ monitorId, err, consecutiveFailures: reg.consecutiveFailures }, 'Monitor poll failed')

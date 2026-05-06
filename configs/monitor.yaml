@@ -7,8 +7,8 @@ global:
   # true 时的行为：
   #   - 数据采集、告警逻辑、通知（Server酱/Email）均正常运行
   #   - 执行器替换为 DryRunExecutor，只记录日志，不发送任何链上交易
-  dry_run: true
-  log_level: "info" # debug（最详细，开发/调试时用）| info | warn | error
+  dry_run: false
+  log_level: "debug" # debug（最详细，开发/调试时用）| info | warn | error
 
 sources:
   coingecko:
@@ -36,7 +36,7 @@ notifications:
   email:
     enabled: true
     smtp_host: "smtp.gmail.com"
-    smtp_port: 587
+    smtp_port: 465
     from: "liulei552211@gmail.com"
     to:
       - "liuchonglin1@gmail.com" # 可填多个收件人，每行一个 "- 地址"
@@ -62,21 +62,27 @@ protocols:
     usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" # Base 链上的 USDC（固定地址）
     router_address: "0x6Df1c91424F79E40E33B1A48F0687B666bE71075" # Aerodrome Universal Router（固定地址）
     position_manager_address: "0x827922686190790b37229fd06084350E74485b72" # Aerodrome NonfungiblePositionManager（固定地址）
+    # Aerodrome 自部署的 Permit2 fork（与官方 0x000…022D 不同，两者不可互换）
+    permit2_address: "0x494bbd8a3302aca833d307d11838f18dbada9c25"
 
     # ⚠️  必须填入你的真实 LP NFT Token ID
     # 获取方式：Aerodrome UI → Positions → 找到 msUSD/USDC 仓位右侧显示的 ID
     # 或在 Basescan 搜索钱包地址 → ERC-721 Tokens → Aerodrome NFT
-    lp_token_id: 62910768
+    #lp_token_id: 62910768
+    lp_token_id: 69680675
 
     # DeBank Pro API 的协议 ID（用于查询你的 LP 仓位价值）
     # 验证方式：curl 'https://pro-openapi.debank.com/v1/user/protocol?id=<钱包地址>&protocol_id=base_aerodrome3' -H 'AccessKey: ...'
     # 若返回 portfolio_item_list 为 null 或 []，说明 ID 不对；可在 DeBank App 找到对应协议页面的 URL slug
     debank_protocol_id: "base_aerodrome3"
 
-    # DeBank 上 Metronome Synth 协议的 ID（用于 liquidity_drain 告警监控 TVL）
+    # DeBank 上 Metronome Synth 协议的 ID 列表（用于 liquidity_drain 告警监控 TVL）
+    # 支持多链：各链 TVL 会累加后用于告警判断
     # 验证方式：curl 'https://pro-openapi.debank.com/v1/protocol?id=<id>' -H 'AccessKey: ...'
     # 在 DeBank App 搜索 Metronome，从协议页面 URL 找到正确的 slug
-    metronome_protocol_id: "base_metronome"
+    metronome_protocol_ids:
+      - "metronome"  # ETH 主链（msUSD 主发行链）
+      - "base_metronome" # Base 链
 
     # Metronome 团队/国库钱包（用于内部人退出检测）
     # 留空则 insider_exit 告警不会触发
@@ -84,8 +90,7 @@ protocols:
       []
 
     polling:
-      price_ms: 60000 # 60秒 — CoinGecko 价格（已合并到 getPoolData，与 pool 共享一次请求）
-      pool_ms: 60000 # 60秒 — 池子储备 + 买入/卖出量
+      market_ms: 60000 # 60秒 — CoinGecko 价格 + 链上 TWAP + 池子储备/买卖量（一次 getPoolData 请求）
       supply_ms: 60000 # 60秒 — 通过 RPC 获取 totalSupply（检测黑客铸造）
       position_ms: 60000 # 60秒 — 通过 DeBank 获取你的仓位价值
       protocol_ms: 120000 # 2分钟 — Metronome 协议 TVL（检测流动性枯竭）
@@ -93,11 +98,11 @@ protocols:
 
     alerts:
       depeg:
-        price_threshold: 0.986797 # CoinGecko 价格低于此值时触发预警
-        twap_threshold: 0.986797 # 链上 TWAP 低于此值作为第二确认
+        price_threshold: 1.01 #0.986797 # CoinGecko 价格低于此值时触发预警
+        twap_threshold: 1.01 #0.986797 # 链上 TWAP 低于此值作为第二确认
         pool_imbalance_pct: 75 # 池中 msUSD 占比 > 75% 作为第三确认（单边失衡）
         sustained_seconds: 180 # 达到 required_confirmations 后，持续 3 分钟才升级为 RED
-        required_confirmations: 4 # 5 个数据源（coingecko/twap/pool/poolPrice/debank），5 中取 4
+        required_confirmations: 3 # 4 个独立数据源（coingecko/twap/pool-imbalance/debank），4 中取 3
 
       hack_mint:
         supply_increase_pct: 15 # totalSupply 在时间窗口内增加 15% 触发
@@ -120,9 +125,11 @@ protocols:
         window_seconds: 3600 # 时间窗口：1 小时（最后防线，不需要多源确认）
 
     execution:
-      swap_batch_count: 3 # 分 3 批兑换 msUSD → USDC，降低单笔滑点影响
+      swap_batch_count: 1 # 分 3 批兑换 msUSD → USDC，降低单笔滑点影响
       swap_slippage_bps: 100 # 最大允许滑点：1%（100 bps = 1%）
-      swap_pool_param: 0x100001 # Universal Router path 中的 3 字节 poolParam：高位 0x100000 为 CL Factory 2 标志，低位 0x000001 为 tickSpacing=1
+      # poolParam = tickSpacing（低 20 位）| factorySelector（高 4 位，0 = CL_FACTORY_1 / 0x100000 = CL_FACTORY_2 / 0x200000 = CL_FACTORY_3）
+      # 0x32 = 50（tickSpacing=50，factorySelector=0 → 默认 CL_FACTORY_1），与上方 pool_address 0x7501... 所属工厂/参数一致
+      swap_pool_param: 0x32
       gas_multiplier: 1.2 # Gas 估算结果乘以 1.2 倍，确保交易及时打包
       deadline_seconds: 300 # 交易有效期：5 分钟，超时自动失效
       max_gas_gwei: 50 # Gas 价格上限：超过 50 gwei 则拒绝执行，等待网络拥堵缓解

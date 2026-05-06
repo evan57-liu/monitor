@@ -38,6 +38,21 @@ const POSITION_MANAGER_ABI = parseAbi([
 
 const UNIVERSAL_ROUTER_ABI = parseAbi([
   'function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline) external payable',
+  // Permit2 errors (AllowanceExpired = 0xd81b2f2e)
+  'error AllowanceExpired(uint256 deadline)',
+  'error InsufficientAllowance(uint256 amount)',
+  // V3 swap errors
+  'error V3InvalidSwap()',
+  'error V3TooLittleReceived()',
+  'error V3TooMuchRequested()',
+  'error V3InvalidAmountOut()',
+  'error V3InvalidCaller()',
+  // Universal Router errors
+  'error TransactionDeadlinePassed()',
+  'error LengthMismatch()',
+  'error InvalidEthSender()',
+  'error ExecutionFailed(uint256 commandIndex, bytes message)',
+  'error BalanceTooLow()',
 ])
 
 /** Universal Router command byte: V3_SWAP_EXACT_IN */
@@ -185,12 +200,26 @@ export class LiveExecutor implements Executor {
       [this.account.address, params.amountIn, params.amountOutMin, path, true, false],
     )
 
-    const txHash = await this.walletClient.writeContract({
-      address: params.routerAddress,
+    const callArgs = {
+      address: params.routerAddress as `0x${string}`,
       abi: UNIVERSAL_ROUTER_ABI,
-      functionName: 'execute',
-      args: [CMD_V3_SWAP_EXACT_IN, [input], BigInt(order.deadline)],
-    })
+      functionName: 'execute' as const,
+      args: [CMD_V3_SWAP_EXACT_IN, [input], BigInt(order.deadline)] as const,
+      account: this.account,
+    }
+
+    try {
+      await this.publicClient.simulateContract(callArgs)
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      this.logger.error(
+        { orderId: order.id, error, routerAddress: params.routerAddress, path, amountIn: params.amountIn.toString(), amountOutMin: params.amountOutMin.toString() },
+        'Swap simulation failed, aborting to avoid wasting gas',
+      )
+      return { status: OrderStatus.FAILED, error, executedAt: new Date() }
+    }
+
+    const txHash = await this.walletClient.writeContract(callArgs)
     return this.waitForReceipt(txHash)
   }
 

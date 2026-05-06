@@ -102,7 +102,6 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
     data.msUsdRatio = pool.msUsdRatio
     data.poolPriceUsd = pool.poolPriceUsd
     if (pool.msUsdRatio > t.poolImbalancePct / 100) confirmations.add('pool')
-    if (pool.poolPriceUsd < t.priceThreshold) confirmations.add('poolPrice')
   }
   if (position?.debankMsUsdPrice !== null && position?.debankMsUsdPrice !== undefined) {
     data.debankPrice_usd = position.debankMsUsdPrice

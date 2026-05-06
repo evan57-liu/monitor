@@ -6,8 +6,8 @@ import type { CoinGeckoClient } from '../../core/clients/coingecko.js'
 import type { DeBankClient } from '../../core/clients/debank.js'
 import type { RpcClient } from '../../core/clients/rpc.js'
 import type pino from 'pino'
-import { PriceMonitor } from './monitors/price.js'
-import { PoolMonitor } from './monitors/pool.js'
+import { MarketMonitor } from './monitors/market.js'
+import type { MarketSignal } from './monitors/market.js'
 import { SupplyMonitor } from './monitors/supply.js'
 import { PositionMonitor } from './monitors/position.js'
 import { ProtocolMonitor } from './monitors/protocol.js'
@@ -17,8 +17,8 @@ import { generateWithdrawalOrders } from './orders.js'
 import type { AlertState } from './alerts.js'
 import type { AllSignals } from './types.js'
 
-// 必须与 AllSignals 的键保持一致
-const SOURCE_NAMES = ['price', 'pool', 'supply', 'position', 'protocol', 'wallets'] as const
+// market = CoinGecko + TWAP + 链上余额（产出 price 和 pool 两个信号）
+const SOURCE_NAMES = ['market', 'supply', 'position', 'protocol', 'wallets'] as const
 type SourceName = typeof SOURCE_NAMES[number]
 
 function initialHealth(): DataSourceStatus {
@@ -40,15 +40,14 @@ export class AerodromeMonitor implements Monitor {
   readonly name = 'Aerodrome msUSD/USDC'
   readonly pollIntervalMs: number
 
-  private readonly priceMonitor: PriceMonitor
-  private readonly poolMonitor: PoolMonitor
+  private readonly marketMonitor: MarketMonitor
   private readonly supplyMonitor: SupplyMonitor
   private readonly positionMonitor: PositionMonitor
   private readonly protocolMonitor: ProtocolMonitor
   private readonly walletMonitor: WalletMonitor
   private readonly alertState: AlertState = new Map()
   private readonly sourceHealth: Record<SourceName, DataSourceStatus> = {
-    price: initialHealth(), pool: initialHealth(), supply: initialHealth(),
+    market: initialHealth(), supply: initialHealth(),
     position: initialHealth(), protocol: initialHealth(), wallets: initialHealth(),
   }
   // 各子监控器独立限速：记录上次实际执行时间
@@ -67,28 +66,22 @@ export class AerodromeMonitor implements Monitor {
     private readonly logger: pino.Logger,
   ) {
     this.pollIntervalMs = Math.min(
-      cfg.polling.priceMs, cfg.polling.poolMs, cfg.polling.supplyMs,
+      cfg.polling.marketMs, cfg.polling.supplyMs,
       cfg.polling.positionMs, cfg.polling.protocolMs, cfg.polling.teamWalletsMs,
     )
-    this.priceMonitor = new PriceMonitor(
+    this.marketMonitor = new MarketMonitor(
       {
         poolAddress: cfg.poolAddress as `0x${string}`,
+        msUsdAddress: cfg.msUsdAddress as `0x${string}`,
+        usdcAddress: cfg.usdcAddress as `0x${string}`,
         token0Decimals: 18, // msUSD 为 token0（地址较小），18位小数
         token1Decimals: 6,  // USDC 为 token1（地址较大），6位小数
       },
       coinGecko, rpc, logger,
     )
-    this.poolMonitor = new PoolMonitor(
-      {
-        poolAddress: cfg.poolAddress as `0x${string}`,
-        msUsdAddress: cfg.msUsdAddress as `0x${string}`,
-        usdcAddress: cfg.usdcAddress as `0x${string}`,
-      },
-      coinGecko, rpc, logger,
-    )
     this.supplyMonitor = new SupplyMonitor({ msUsdAddress: cfg.msUsdAddress as `0x${string}` }, rpc, logger)
     this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress }, deBank, logger)
-    this.protocolMonitor = new ProtocolMonitor({ protocolId: cfg.metronomeProtocolId }, deBank, logger)
+    this.protocolMonitor = new ProtocolMonitor({ protocolIds: cfg.metronomeProtocolIds }, deBank, logger)
     this.walletMonitor = new WalletMonitor(
       { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, msUsdSymbol: 'msUSD', chain: cfg.chain },
       deBank,
@@ -118,19 +111,27 @@ export class AerodromeMonitor implements Monitor {
     }
 
     const [
-      [priceR, priceMs], [poolR, poolMs], [supplyR, supplyMs],
+      [marketR, marketMs], [supplyR, supplyMs],
       [positionR, positionMs], [protocolR, protocolMs], [walletsR, walletsMs],
     ] = await Promise.all([
-      runIf('price',    p.priceMs,      () => this.priceMonitor.check()),
-      runIf('pool',     p.poolMs,       () => this.poolMonitor.check()),
+      runIf('market',   p.marketMs,     () => this.marketMonitor.check()),
       runIf('supply',   p.supplyMs,     () => this.supplyMonitor.check()),
       runIf('position', p.positionMs,   () => this.positionMonitor.check()),
       runIf('protocol', p.protocolMs,   () => this.protocolMonitor.check()),
       runIf('wallets',  p.teamWalletsMs,() => this.walletMonitor.check()),
     ])
 
-    this.applyResult('price',    priceR,    priceMs)
-    this.applyResult('pool',     poolR,     poolMs)
+    // market monitor 产出 price 和 pool 两个信号，需单独展开
+    if (marketR !== null) {
+      this.updateSourceHealth('market', marketR, marketMs)
+      if (marketR.status === 'fulfilled') {
+        this.cachedSignals.price = marketR.value.price
+        this.cachedSignals.pool  = marketR.value.pool
+      } else {
+        this.cachedSignals.price = null
+        this.cachedSignals.pool  = null
+      }
+    }
     this.applyResult('supply',   supplyR,   supplyMs)
     this.applyResult('position', positionR, positionMs)
     this.applyResult('protocol', protocolR, protocolMs)
@@ -141,7 +142,7 @@ export class AerodromeMonitor implements Monitor {
     const alerts = evaluateAlerts(this.alertState, signals, this.cfg, this.id)
 
     this.logger.debug({
-      latencyMs: { price: priceMs, pool: poolMs, supply: supplyMs, position: positionMs, protocol: protocolMs, wallets: walletsMs },
+      latencyMs: { market: marketMs, supply: supplyMs, position: positionMs, protocol: protocolMs, wallets: walletsMs },
       supply: signals.supply ? { totalSupply: signals.supply.totalSupply.toString(), previousSupply: signals.supply.previousSupply?.toString() ?? null } : null,
       protocol: signals.protocol ? { tvlUsd: signals.protocol.tvlUsd, previousTvlUsd: signals.protocol.previousTvlUsd } : null,
       pool: signals.pool ? { buys1h: signals.pool.buys1h, sells1h: signals.pool.sells1h, volume24h: signals.pool.volume24h, reserveInUsd: signals.pool.reserveInUsd } : null,

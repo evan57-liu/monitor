@@ -8,7 +8,7 @@ import type { AerodromeConfig } from '../../core/config.js'
 // Minimal config for tests
 const cfg = {
   alerts: {
-    depeg: { priceThreshold: 0.992, twapThreshold: 0.992, poolImbalancePct: 75, sustainedSeconds: 180, requiredConfirmations: 4 },
+    depeg: { priceThreshold: 0.992, twapThreshold: 0.992, poolImbalancePct: 75, sustainedSeconds: 180, requiredConfirmations: 3 },
     hackMint: { supplyIncreasePct: 15, supplyWindowSeconds: 3600, priceDropPct: 2, sellsSpikeMultiplier: 5 },
     liquidityDrain: { tvlDropPct: 30, tvlWindowSeconds: 3600, poolMsUsdRatioPct: 70, sellsBuysRatio: 3 },
     insiderExit: { largeOutflowUsd: 50000, priceDropPct: 1 },
@@ -61,8 +61,8 @@ describe('evaluateAlerts — depeg', () => {
     expect(depeg?.level).toBe(AlertLevel.WARNING)
   })
 
-  it('RED when condition sustained > 3 min and all 4 sources confirm', () => {
-    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool', 'poolPrice']) // 4 min ago
+  it('RED when condition sustained > 3 min and 3 of 4 sources confirm', () => {
+    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool']) // 4 min ago
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
       pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
@@ -70,15 +70,15 @@ describe('evaluateAlerts — depeg', () => {
     const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
     expect(depeg?.level).toBe(AlertLevel.RED)
-    expect(depeg?.confirmations).toBe(4)
+    expect(depeg?.confirmations).toBe(3)
   })
 
-  it('WARNING when sustained but only 2 of 4 sources confirm (twap null, poolPrice healthy)', () => {
+  it('WARNING when sustained but only 2 of 4 sources confirm (twap null, debank unavailable)', () => {
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'pool'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: null, fetchedAt: new Date() }, // twap unavailable
-      // poolPriceUsd above threshold → poolPrice source does not confirm
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.995, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: null, fetchedAt: new Date() },
     })
     const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -104,26 +104,26 @@ describe('evaluateAlerts — depeg', () => {
     expect(state.get(AlertType.DEPEG)?.confirmations.has('debank')).toBe(true)
   })
 
-  it('RED with debank as the 4th source (poolPrice healthy)', () => {
-    // poolPrice 正常，但 coingecko+twap+pool+debank 四源确认 → RED
+  it('RED when all 4 independent sources confirm', () => {
+    // coingecko+twap+pool+debank 全部确认 → 4/4 → RED
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool', 'debank'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.995, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
       position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
     })
     const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
     expect(depeg?.level).toBe(AlertLevel.RED)
-    expect(depeg?.confirmations).toBeGreaterThanOrEqual(4)
+    expect(depeg?.confirmations).toBe(4)
   })
 
-  it('WARNING when only 3 of 5 sources confirm (debank price healthy)', () => {
-    // coingecko+twap+pool 确认，但 poolPrice 和 debank 健康 → 3/5 < required_confirmations=4
-    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool'])
+  it('WARNING when only 2 of 4 sources confirm (twap null, debank healthy)', () => {
+    // coingecko+pool 确认，但 twap 不可用、debank 健康 → 2/4 < required_confirmations=3 → WARNING
+    const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'pool'])
     const signals = makeSignals({
-      price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.995, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      price: { coingecko: 0.985, twap: null, fetchedAt: new Date() },
+      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
       position: { netUsdValue: 18_000, rewardUsdValue: 100, previousNetUsdValue: 18_000, debankMsUsdPrice: 1.001, fetchedAt: new Date() },
     })
     const alerts = evaluateAlerts(state, signals, cfg, PROTOCOL_ID)
