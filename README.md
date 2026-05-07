@@ -97,7 +97,7 @@ npm install
 
 # 验证依赖安装正确
 npm run typecheck   # 期望: 0 errors
-npm test            # 期望: 136 tests passed
+npm test            # 期望: 135 tests passed
 ```
 
 ---
@@ -125,9 +125,8 @@ global:
 ```yaml
 sources:
   coingecko:
-    rate_limit_per_minute: 500    # Pro 计划一般 500/min，不用改
     timeout_ms: 10000             # 10秒超时
-    retry_attempts: 3             # 失败最多重试 3 次
+    retry_attempts: 3             # 失败最多重试 3 次（指数退避）
 
   debank:
     timeout_ms: 15000             # DeBank 响应较慢，给15秒
@@ -137,6 +136,7 @@ sources:
     base:
       url: "https://mainnet.base.org"   # 免费公共 RPC，够用
       timeout_ms: 10000
+      retry_attempts: 3           # RPC 调用失败最多重试 3 次（指数退避）
 ```
 
 > 如果公共 RPC 不稳定，可在 `configs/.env` 中设置 `DM_RPC_BASE_URL=https://你的私有RPC`

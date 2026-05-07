@@ -87,7 +87,7 @@ export class AerodromeMonitor implements Monitor {
     this.positionMonitor = new PositionMonitor({ walletAddress, protocolId: cfg.debankProtocolId, poolId: cfg.gaugeAddress, msUsdAddress: cfg.msUsdAddress, monitorId: this.id }, deBank, historyStore, logger)
     this.protocolMonitor = new ProtocolMonitor({ protocolIds: cfg.metronomeProtocolIds, monitorId: this.id }, deBank, historyStore, logger)
     this.walletMonitor = new WalletMonitor(
-      { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, msUsdSymbol: 'msUSD', chain: cfg.chain },
+      { teamWallets: cfg.teamWallets, msUsdAddress: cfg.msUsdAddress, chain: cfg.chain },
       deBank,
       logger,
     )

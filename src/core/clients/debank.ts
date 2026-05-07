@@ -1,5 +1,5 @@
 // src/core/clients/debank.ts
-import { withRetry } from '../retry.js'
+import { withRetry, defaultRetryOpts } from '../retry.js'
 import { RequestCache } from '../cache.js'
 import type pino from 'pino'
 
@@ -120,7 +120,7 @@ export class DeBankClient {
           clearTimeout(timeout)
         }
       },
-      { maxAttempts: this.cfg.retryAttempts, baseDelayMs: 500, maxDelayMs: 5_000 },
+      defaultRetryOpts(this.cfg.retryAttempts),
     )
   }
 

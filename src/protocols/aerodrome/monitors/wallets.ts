@@ -6,7 +6,6 @@ import type pino from 'pino'
 interface WalletMonitorConfig {
   teamWallets: string[]
   msUsdAddress: string
-  msUsdSymbol: string
   chain: string
 }
 
@@ -33,7 +32,7 @@ export class WalletMonitor {
 
   private async checkWallet(walletAddress: string): Promise<WalletSignal> {
     const tokens = await this.debank.getWalletTokens(walletAddress, this.cfg.chain)
-    const msUsdToken = tokens.find(t => t.symbol === this.cfg.msUsdSymbol)
+    const msUsdToken = tokens.find(t => t.id.toLowerCase() === this.cfg.msUsdAddress.toLowerCase())
     const msUsdAmount = msUsdToken?.amount ?? 0
     const msUsdUsdValue = msUsdToken?.usdValue ?? 0
     const previous = this.previousAmounts.get(walletAddress) ?? null

@@ -1,11 +1,13 @@
 // src/core/clients/rpc.ts
 import { createPublicClient, http, parseAbi } from 'viem'
 import { base } from 'viem/chains'
+import { withRetry, defaultRetryOpts } from '../retry.js'
 import type pino from 'pino'
 
 export interface RpcConfig {
   url: string
   timeoutMs: number
+  retryAttempts: number
 }
 
 // ERC-20 ABI 子集 — totalSupply + balanceOf
@@ -28,7 +30,7 @@ export class RpcClient {
   private readonly balanceCache = new Map<string, { value: bigint; expiresAt: number }>()
   private static readonly BALANCE_TTL_MS = 20_000
 
-  constructor(cfg: RpcConfig, private readonly logger?: pino.Logger) {
+  constructor(private readonly cfg: RpcConfig, private readonly logger?: pino.Logger) {
     this.client = createPublicClient({
       chain: base,
       transport: http(cfg.url, { timeout: cfg.timeoutMs }),
@@ -101,7 +103,7 @@ export class RpcClient {
   ): Promise<T> {
     this.logger?.debug(ctx, `RPC ${label} →`)
     const t0 = Date.now()
-    const result = await fn()
+    const result = await withRetry(fn, defaultRetryOpts(this.cfg.retryAttempts))
     this.logger?.debug({ ...ctx, ...resultCtx(result), durationMs: Date.now() - t0 }, `RPC ${label} ←`)
     return result
   }

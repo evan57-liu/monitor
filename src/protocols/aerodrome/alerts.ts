@@ -134,13 +134,14 @@ function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: Aerodrome
     }
   }
   if (price?.coingecko !== null && price?.coingecko !== undefined) {
+    // 以距 $1 锚定价的偏差为度量（而非相对于历史价格的跌幅）：dropPct = (1 - price) * 100
     const dropPct = (1 - price.coingecko) * 100
     data.priceDropPct = dropPct
     if (dropPct >= t.priceDropPct) confirmations.add('price')
   }
-  if (pool !== null && pool.buys1h > 0) {
-    const sellsRatio = pool.sells1h / pool.buys1h
-    data.sellsRatio = sellsRatio
+  if (pool !== null) {
+    const sellsRatio = pool.buys1h > 0 ? pool.sells1h / pool.buys1h : (pool.sells1h > 0 ? Infinity : 0)
+    data.sellsRatio = isFinite(sellsRatio) ? sellsRatio : 'Infinity'
     if (sellsRatio >= t.sellsSpikeMultiplier) confirmations.add('sells')
   }
 
@@ -165,10 +166,11 @@ function evaluateLiquidityDrain(state: AlertState, signals: AllSignals, cfg: Aer
     }
   }
   if (pool !== null) {
+    const sellsBuysRatio = pool.buys1h > 0 ? pool.sells1h / pool.buys1h : (pool.sells1h > 0 ? Infinity : 0)
     data.msUsdRatio = pool.msUsdRatio
-    data.sellsBuysRatio = pool.buys1h > 0 ? pool.sells1h / pool.buys1h : pool.sells1h
+    data.sellsBuysRatio = isFinite(sellsBuysRatio) ? sellsBuysRatio : 'Infinity'
     if (pool.msUsdRatio > t.poolMsUsdRatioPct / 100) confirmations.add('pool')
-    if (pool.buys1h > 0 && pool.sells1h / pool.buys1h >= t.sellsBuysRatio) confirmations.add('sells')
+    if (sellsBuysRatio >= t.sellsBuysRatio) confirmations.add('sells')
   }
 
   return buildAlert(AlertType.LIQUIDITY_DRAIN, state, confirmations, data, { sustainedSeconds: 120, requiredConfirmations: 2 }, protocol, 'Liquidity Drain Detected', now)
@@ -195,6 +197,7 @@ function evaluateInsiderExit(state: AlertState, signals: AllSignals, cfg: Aerodr
     }
   }
   if (price?.coingecko !== null && price?.coingecko !== undefined) {
+    // 以距 $1 锚定价的偏差为度量（而非相对于历史价格的跌幅）：dropPct = (1 - price) * 100
     const dropPct = (1 - price.coingecko) * 100
     data.priceDropPct = dropPct
     if (dropPct >= t.priceDropPct) confirmations.add('price')

@@ -57,6 +57,7 @@ async function main(): Promise<void> {
   const rpc = new RpcClient({
     url: cfg.sources.rpc.base.url,
     timeoutMs: cfg.sources.rpc.base.timeoutMs,
+    retryAttempts: cfg.sources.rpc.base.retryAttempts,
   }, logger)
 
   // ── 通知渠道 ────────────────────────────────────────────────────────────
@@ -162,10 +163,15 @@ async function main(): Promise<void> {
 }
 
 function scheduleDailyAt(hour: number, fn: () => Promise<void>): void {
+  let lastRanDay: number | null = null
   const checkAndRun = () => {
-    if (new Date().getHours() === hour) void fn()
+    const now = new Date()
+    const today = now.getDate()
+    if (now.getHours() === hour && lastRanDay !== today) {
+      lastRanDay = today
+      void fn()
+    }
   }
-  // 每 30 分钟检查一次
   setInterval(checkAndRun, 30 * 60 * 1000)
 }
 

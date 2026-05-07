@@ -140,7 +140,6 @@ describe('loadConfig', () => {
     expect(cfg.secrets.coingeckoApiKey).toBe('test-cg-key')
     expect(cfg.secrets.privateKey).toMatch(/^0x/)
     expect(cfg.sources.coingecko.baseUrl).toBe('https://pro-api.coingecko.com/api/v3')
-    expect(cfg.sources.coingecko.rateLimitPerMinute).toBe(500)
     expect(cfg.sources.debank.baseUrl).toBe('https://pro-openapi.debank.com/v1')
     expect(cfg.sources.debank.timeoutMs).toBe(15000)
   })

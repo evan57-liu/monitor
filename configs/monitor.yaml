@@ -1,6 +1,6 @@
 # 环境变量前缀：DM_
 # 任何配置项均可通过 DM_ 前缀 + SCREAMING_SNAKE_CASE 键路径的环境变量覆盖
-# 例如：DM_GLOBAL_DRY_RUN=false 可覆盖 global.dry_run
+# 例如：DM_GLOBAL_DRY_RUN=false 可覆盖 global.dry_run（支持 true/false 双向覆盖）
 
 global:
   # ⚠️  上线前必须设为 true，完成三阶段测试后再改为 false
@@ -13,7 +13,6 @@ global:
 sources:
   coingecko:
     base_url: "https://pro-api.coingecko.com/api/v3"
-    rate_limit_per_minute: 500 # Pro 计划一般 500/min，无需修改
     timeout_ms: 10000 # 单次请求超时：10 秒
     retry_attempts: 3 # 失败后最多重试 3 次（指数退避）
   debank:
@@ -68,8 +67,7 @@ protocols:
     # ⚠️  必须填入你的真实 LP NFT Token ID
     # 获取方式：Aerodrome UI → Positions → 找到 msUSD/USDC 仓位右侧显示的 ID
     # 或在 Basescan 搜索钱包地址 → ERC-721 Tokens → Aerodrome NFT
-    #lp_token_id: 62910768
-    lp_token_id: 69680675
+    lp_token_id: 62910768
 
     # DeBank Pro API 的协议 ID（用于查询你的 LP 仓位价值）
     # 验证方式：curl 'https://pro-openapi.debank.com/v1/user/protocol?id=<钱包地址>&protocol_id=base_aerodrome3' -H 'AccessKey: ...'
@@ -107,7 +105,7 @@ protocols:
       hack_mint:
         supply_increase_pct: 15 # 在 supply_window_seconds 窗口内 totalSupply 增加 > 15% 触发
         supply_window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对
-        price_drop_pct: 2 # 同时价格下跌 > 2%（铸币后抛售导致）
+        price_drop_pct: 2 # 当前价格低于 $1 锚定价的偏差 > 2%（即价格 < $0.98）
         sells_spike_multiplier: 5 # 同时卖出量是正常水平的 5 倍
 
       liquidity_drain:
@@ -118,17 +116,17 @@ protocols:
 
       insider_exit:
         large_outflow_usd: 50000 # 任一团队钱包单次 msUSD 转出 > $50,000
-        price_drop_pct: 1 # 同时价格下跌 > 1%
+        price_drop_pct: 1 # 当前价格低于 $1 锚定价的偏差 > 1%（即价格 < $0.99）
 
       position_drop:
-        drop_pct: 0.01 # 在 window_seconds 窗口内 LP 仓位价值下跌 > 此百分比触发
+        drop_pct: 2 # 在 window_seconds 窗口内 LP 仓位价值下跌 > 此百分比触发
         window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对（最后防线）
-        sustained_seconds: 1 # 持续满足此秒数才升 RED，防止瞬间误触
+        sustained_seconds: 300 # 持续满足此秒数才升 RED，防止瞬间误触
         required_confirmations: 1 # 仅 DeBank 一个数据源
 
     execution:
-      swap_batch_count: 1 # 分 3 批兑换 msUSD → USDC，批次之间重新检查价格地板
-      swap_slippage_bps: 100 # 最大允许滑点：1%（100 bps = 1%）
+      swap_batch_count: 3 # 分 3 批兑换 msUSD → USDC，批次之间重新检查价格地板
+      swap_slippage_bps: 10 # 最大允许滑点：0.1%（10 bps = 0.1%）
       # poolParam = tickSpacing（低 20 位）| factorySelector（高 4 位，0 = CL_FACTORY_1 / 0x100000 = CL_FACTORY_2 / 0x200000 = CL_FACTORY_3）
       # 0x32 = 50（tickSpacing=50，factorySelector=0 → 默认 CL_FACTORY_1），与上方 pool_address 0x7501... 所属工厂/参数一致
       swap_pool_param: 0x32

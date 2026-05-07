@@ -9,7 +9,7 @@ import type { KeychainReader } from './keychain.js'
 export interface AppConfig {
   global: { dryRun: boolean; logLevel: string }
   sources: {
-    coingecko: { baseUrl: string; rateLimitPerMinute: number; timeoutMs: number; retryAttempts: number }
+    coingecko: { baseUrl: string; timeoutMs: number; retryAttempts: number }
     debank: { baseUrl: string; timeoutMs: number; retryAttempts: number }
     rpc: { base: { url: string; timeoutMs: number; retryAttempts: number } }
   }
@@ -82,13 +82,14 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
 
   return {
     global: {
-      dryRun: process.env['DM_GLOBAL_DRY_RUN'] === 'false' ? false : Boolean(y.global.dry_run),
+      dryRun: process.env['DM_GLOBAL_DRY_RUN'] === 'true' ? true
+          : process.env['DM_GLOBAL_DRY_RUN'] === 'false' ? false
+          : Boolean(y.global.dry_run),
       logLevel: (process.env['DM_GLOBAL_LOG_LEVEL'] ?? y.global.log_level) as string,
     },
     sources: {
       coingecko: {
         baseUrl: y.sources.coingecko.base_url,
-        rateLimitPerMinute: y.sources.coingecko.rate_limit_per_minute,
         timeoutMs: y.sources.coingecko.timeout_ms,
         retryAttempts: y.sources.coingecko.retry_attempts,
       },

@@ -6,6 +6,10 @@ export interface RetryOptions {
   maxDelayMs: number
 }
 
+export function defaultRetryOpts(maxAttempts: number): RetryOptions {
+  return { maxAttempts, baseDelayMs: 500, maxDelayMs: 5_000 }
+}
+
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
   let lastErr: unknown
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {

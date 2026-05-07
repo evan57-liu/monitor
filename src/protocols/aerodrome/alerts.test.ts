@@ -226,14 +226,16 @@ describe('evaluateAlerts — hack_mint', () => {
     expect(alert?.level).toBe(AlertLevel.RED)
   })
 
-  it('no sells confirmation when buys1h=0 (cannot compute meaningful ratio)', () => {
+  it('adds sells confirmation when buys1h=0 (zero-buy extreme signal), but stays WARNING without other confirmations', () => {
     const state = new Map()
     const store = makeHistoryStub({ supply: [[oneHourAgo, 1_000_000n * 10n ** 18n]] })
     const signals = makeSignals({
       pool: makePool({ msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 0, sells1h: 5, volume24h: 1_000 }),
     })
-    evaluate(state, signals, store)
-    expect(state.has(AlertType.HACK_MINT)).toBe(false)
+    const alerts = evaluate(state, signals, store)
+    const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
+    // 仅 sells 一个确认（共需 2 个）→ WARNING，不升 RED
+    expect(alert?.level).toBe(AlertLevel.WARNING)
   })
 
   it('stale single-source confirmation does not persist to RED (accumulated state bug)', () => {
