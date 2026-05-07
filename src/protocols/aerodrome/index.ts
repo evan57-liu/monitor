@@ -17,7 +17,7 @@ import { applyCompoundConfirmation } from './compound-confirmation.js'
 import { generateWithdrawalOrders } from './orders.js'
 import { checkPriceFloor } from './price-floor.js'
 import type { AlertState } from './alerts.js'
-import type { AllSignals } from './types.js'
+import type { AllSignals, PoolSignal, PositionSignal } from './types.js'
 import type { HistoryStore } from './history-store.js'
 
 // market = CoinGecko + TWAP + 链上余额（产出 price 和 pool 两个信号）
@@ -131,6 +131,17 @@ export class AerodromeMonitor implements Monitor {
       if (marketR.status === 'fulfilled') {
         this.cachedSignals.price = marketR.value.price
         this.cachedSignals.pool  = marketR.value.pool
+        const now = marketR.value.price.fetchedAt
+        try {
+          if (marketR.value.price.coingecko !== null)
+            this.historyStore.insertPrice(this.id, 'msusd', marketR.value.price.coingecko, 'coingecko', now)
+          if (marketR.value.price.twap !== null)
+            this.historyStore.insertPrice(this.id, 'msusd', marketR.value.price.twap, 'twap', now)
+          if (marketR.value.pool !== null)
+            this.historyStore.insertPool(this.id, this.cfg.poolAddress, marketR.value.pool)
+        } catch (err) {
+          this.logger.error({ err }, 'Failed to persist market history')
+        }
       } else {
         this.cachedSignals.price = null
         this.cachedSignals.pool  = null
@@ -138,6 +149,16 @@ export class AerodromeMonitor implements Monitor {
     }
     this.applyResult('supply',   supplyR,   supplyMs)
     this.applyResult('position', positionR, positionMs)
+    if (positionR !== null && positionR.status === 'fulfilled') {
+      const pos = positionR.value
+      if (pos !== null && pos.debankMsUsdPrice !== null) {
+        try {
+          this.historyStore.insertPrice(this.id, 'msusd', pos.debankMsUsdPrice, 'debank', pos.fetchedAt)
+        } catch (err) {
+          this.logger.error({ err }, 'Failed to persist debank price history')
+        }
+      }
+    }
     this.applyResult('protocol', protocolR, protocolMs)
     this.applyResult('wallets',  walletsR,  walletsMs)
 
@@ -170,9 +191,8 @@ export class AerodromeMonitor implements Monitor {
 
     let orders: ExecutionOrder[] = []
     if (triggering.length > 0) {
-      const msUsdBalance = signals.position
-        ? BigInt(Math.floor(signals.position.netUsdValue * 1e18))
-        : 0n
+      // amountOutMin 参考值：按仓位占池比例估算 msUSD 份额；实际 amountIn 在 executeSwap 中按链上余额重算
+      const msUsdBalance = this.estimateMsUsdBalance(signals.position, signals.pool)
       const floorResult = checkPriceFloor(signals, this.cfg.execution.minPriceToSwap, this.cfg.execution.priceFloorRequired)
       if (!floorResult.ok) {
         this.logger.error(
@@ -204,6 +224,16 @@ export class AerodromeMonitor implements Monitor {
     this.updateSourceHealth(name, result, ms)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(this.cachedSignals as any)[name] = result.status === 'fulfilled' ? result.value : null
+  }
+
+  private estimateMsUsdBalance(position: PositionSignal | null, pool: PoolSignal | null): bigint {
+    if (!position) return 0n
+    if (!pool || pool.reserveInUsd <= 0 || pool.reserve0 === 0n) {
+      return BigInt(Math.floor(position.netUsdValue * 1e18))
+    }
+    const fractionE6 = BigInt(Math.floor(position.netUsdValue / pool.reserveInUsd * 1_000_000))
+    const capped = fractionE6 > 1_000_000n ? 1_000_000n : fractionE6
+    return pool.reserve0 * capped / 1_000_000n
   }
 
   private updateSourceHealth(name: SourceName, result: PromiseSettledResult<unknown>, latencyMs: number): void {

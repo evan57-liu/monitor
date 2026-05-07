@@ -90,8 +90,8 @@ describe('Engine', () => {
       confirmations: 3, requiredConfirmations: 3, sustainedMs: 200_000, requiredSustainedMs: 180_000,
     })
     const orders: ExecutionOrder[] = [
-      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
-      { id: 'o2', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o2', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
     ]
     const monitor = makeMonitor('test', { alerts: [], orders })
     const engine = new Engine({ db, executor, notifier: makeNotifier(), logger })
@@ -118,8 +118,8 @@ describe('Engine', () => {
       confirmations: 3, requiredConfirmations: 3, sustainedMs: 200_000, requiredSustainedMs: 180_000,
     })
     const orders: ExecutionOrder[] = [
-      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
-      { id: 'o2', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o2', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
     ]
     const monitor = makeMonitor('test', { orders })
     const engine = new Engine({ db, executor, notifier: makeNotifier(), logger })
@@ -160,8 +160,8 @@ describe('Engine', () => {
       totalBatches: 1,
     }
     const orders: ExecutionOrder[] = [
-      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
-      { id: 'o2', alertId, protocol: 'test', type: OrderType.REMOVE_LIQUIDITY, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o1', alertId, protocol: 'test', type: OrderType.UNSTAKE, sequence: 1, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
+      { id: 'o2', alertId, protocol: 'test', type: OrderType.REMOVE_LIQUIDITY, sequence: 2, groupId: 'g1', params: { gaugeAddress: '0x1', positionManagerAddress: '0x2', tokenId: 1n } as UnstakeParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
       { id: 'o3', alertId, protocol: 'test', type: OrderType.PRICE_FLOOR_GUARD, sequence: 3, groupId: 'g1', params: guardParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
       { id: 'o4', alertId, protocol: 'test', type: OrderType.SWAP, sequence: 4, groupId: 'g1', params: swapParams, maxGasGwei: 50, deadline: 9999999999, status: OrderStatus.PENDING, createdAt: new Date() },
     ]

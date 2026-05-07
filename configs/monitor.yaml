@@ -90,11 +90,11 @@ protocols:
       []
 
     polling:
-      market_ms: 60000 # 60秒 — CoinGecko 价格 + 链上 TWAP + 池子储备/买卖量（一次 getPoolData 请求）
-      supply_ms: 60000 # 60秒 — 通过 RPC 获取 totalSupply（检测黑客铸造）
-      position_ms: 60000 # 60秒 — 通过 DeBank 获取你的仓位价值
-      protocol_ms: 120000 # 2分钟 — Metronome 协议 TVL（检测流动性枯竭）
-      team_wallets_ms: 120000 # 2分钟 — 团队钱包持仓（检测内部人撤离）
+      market_ms: 120000 # 120秒 — CoinGecko 价格 + 链上 TWAP + 池子储备/买卖量（一次 getPoolData 请求）
+      supply_ms: 120000 # 120秒 — 通过 RPC 获取 totalSupply（检测黑客铸造）
+      position_ms: 120000 # 120秒 — 通过 DeBank 获取你的仓位价值
+      protocol_ms: 240000 # 240秒 — Metronome 协议 TVL（检测流动性枯竭）
+      team_wallets_ms: 240000 # 240秒 — 团队钱包持仓（检测内部人撤离）
 
     alerts:
       depeg:

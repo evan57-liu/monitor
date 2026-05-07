@@ -15,6 +15,8 @@ export interface PoolSignal {
   buys1h: number
   sells1h: number
   volume24h: number
+  reserve0: bigint            // msUSD 原始余额（18 decimals）
+  reserve1: bigint            // USDC 原始余额（6 decimals）
   fetchedAt: Date
 }
 

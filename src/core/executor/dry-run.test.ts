@@ -16,6 +16,7 @@ function makeUnstakeOrder(): ExecutionOrder {
     groupId: 'group-1',
     params: {
       gaugeAddress: '0x0000000000000000000000000000000000000001',
+      positionManagerAddress: '0x0000000000000000000000000000000000000002',
       tokenId: 12345n,
     } as UnstakeParams,
     maxGasGwei: 50,

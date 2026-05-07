@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { evaluateAlerts } from './alerts.js'
 import { AlertLevel, AlertType } from '../../core/types.js'
-import type { AllSignals } from './types.js'
+import type { AllSignals, PoolSignal } from './types.js'
 import type { AerodromeConfig } from '../../core/config.js'
 import type { HistoryStore } from './history-store.js'
 
@@ -40,6 +40,8 @@ function makeHistoryStub(prefill: HistoryPrefill = {}): HistoryStore {
     insertSupply: () => {},
     insertProtocolTvl: () => {},
     insertPosition: () => {},
+    insertPrice: () => {},
+    insertPool: () => {},
     getSupplyAtOrBefore: (_token, before) => getAtOrBefore(prefill.supply, before),
     getProtocolTvlAtOrBefore: (_protocol, before) => getAtOrBefore(prefill.tvl, before),
     getPositionAtOrBefore: (_protocol, _wallet, before) => getAtOrBefore(prefill.position, before),
@@ -48,10 +50,19 @@ function makeHistoryStub(prefill: HistoryPrefill = {}): HistoryStore {
 
 // ── Signal & state helpers ────────────────────────────────────────────────────
 
+function makePool(overrides: Partial<PoolSignal> = {}): PoolSignal {
+  return {
+    reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0001,
+    buys1h: 50, sells1h: 50, volume24h: 180_000,
+    reserve0: 1_250_000n * 10n ** 18n, reserve1: 1_250_000n * 10n ** 6n,
+    fetchedAt: new Date(), ...overrides,
+  }
+}
+
 function makeSignals(overrides: Partial<AllSignals> = {}): AllSignals {
   return {
     price: { coingecko: 1.0001, twap: 1.0001, fetchedAt: new Date() },
-    pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0001, buys1h: 50, sells1h: 50, volume24h: 180_000, fetchedAt: new Date() },
+    pool: makePool(),
     supply: { totalSupply: 1_000_000n * 10n ** 18n, fetchedAt: new Date() },
     position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
     protocol: { tvlUsd: 55_000_000, fetchedAt: new Date() },
@@ -87,7 +98,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = stateWithAge(AlertType.DEPEG, 30_000, ['coingecko', 'twap', 'pool'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
     })
     const alerts = evaluate(state, signals)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -98,7 +109,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
     })
     const alerts = evaluate(state, signals)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -110,7 +121,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'pool'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: null, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
       position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: null, fetchedAt: new Date() },
     })
     const alerts = evaluate(state, signals)
@@ -128,7 +139,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = new Map()
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
       position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
     })
     evaluate(state, signals)
@@ -139,7 +150,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'twap', 'pool', 'debank'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
       position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
     })
     const alerts = evaluate(state, signals)
@@ -152,7 +163,7 @@ describe('evaluateAlerts — depeg', () => {
     const state = stateWithAge(AlertType.DEPEG, 4 * 60 * 1000, ['coingecko', 'pool'])
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: null, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
       position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 1.001, fetchedAt: new Date() },
     })
     const alerts = evaluate(state, signals)
@@ -172,7 +183,7 @@ describe('evaluateAlerts — hack_mint', () => {
     const signals = makeSignals({
       supply: { totalSupply: 1_160_000n * 10n ** 18n, fetchedAt: new Date() },
       price: { coingecko: 0.974, twap: 0.976, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.72, poolPriceUsd: 0.974, buys1h: 10, sells1h: 800, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.72, poolPriceUsd: 0.974, buys1h: 10, sells1h: 800 }),
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
@@ -208,7 +219,7 @@ describe('evaluateAlerts — hack_mint', () => {
     const signals = makeSignals({
       supply: { totalSupply: current, fetchedAt: new Date() },
       price: { coingecko: 0.974, twap: 0.976, fetchedAt: new Date() },
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.72, poolPriceUsd: 0.974, buys1h: 10, sells1h: 800, volume24h: 180_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.72, poolPriceUsd: 0.974, buys1h: 10, sells1h: 800 }),
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
@@ -219,7 +230,7 @@ describe('evaluateAlerts — hack_mint', () => {
     const state = new Map()
     const store = makeHistoryStub({ supply: [[oneHourAgo, 1_000_000n * 10n ** 18n]] })
     const signals = makeSignals({
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 0, sells1h: 5, volume24h: 1_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 0, sells1h: 5, volume24h: 1_000 }),
     })
     evaluate(state, signals, store)
     expect(state.has(AlertType.HACK_MINT)).toBe(false)
@@ -230,7 +241,7 @@ describe('evaluateAlerts — hack_mint', () => {
     const store = makeHistoryStub({ supply: [[oneHourAgo, 1_000_000n * 10n ** 18n]] })
     const signals = makeSignals({
       supply: { totalSupply: 1_000_000n * 10n ** 18n, fetchedAt: new Date() }, // 无变化
-      pool: { reserveInUsd: 2_500_000, msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 10, sells1h: 80, volume24h: 50_000, fetchedAt: new Date() },
+      pool: makePool({ msUsdRatio: 0.5, poolPriceUsd: 1.0, buys1h: 10, sells1h: 80, volume24h: 50_000 }),
       price: { coingecko: 0.999, twap: 0.999, fetchedAt: new Date() }, // dropPct=0.1 < 2
     })
     const alerts = evaluate(state, signals, store)
@@ -250,7 +261,7 @@ describe('evaluateAlerts — liquidity_drain', () => {
     const store = makeHistoryStub({ tvl: [[oneHourAgo, 55_000_000]] })
     const signals = makeSignals({
       protocol: { tvlUsd: 37_000_000, fetchedAt: new Date() }, // -32.7%
-      pool: { reserveInUsd: 1_500_000, msUsdRatio: 0.74, poolPriceUsd: 0.991, buys1h: 10, sells1h: 60, volume24h: 50_000, fetchedAt: new Date() },
+      pool: makePool({ reserveInUsd: 1_500_000, msUsdRatio: 0.74, poolPriceUsd: 0.991, buys1h: 10, sells1h: 60, volume24h: 50_000 }),
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.LIQUIDITY_DRAIN)
@@ -273,7 +284,7 @@ describe('evaluateAlerts — liquidity_drain', () => {
     const store = makeHistoryStub({ tvl: [[oneHourAgo, 55_000_000]] })
     const signals = makeSignals({
       protocol: { tvlUsd: 35_000_000, fetchedAt: new Date() }, // -36.4%
-      pool: { reserveInUsd: 1_500_000, msUsdRatio: 0.74, poolPriceUsd: 0.991, buys1h: 10, sells1h: 60, volume24h: 50_000, fetchedAt: new Date() },
+      pool: makePool({ reserveInUsd: 1_500_000, msUsdRatio: 0.74, poolPriceUsd: 0.991, buys1h: 10, sells1h: 60, volume24h: 50_000 }),
     })
     const alerts = evaluate(state, signals, store)
     expect(alerts.find(a => a.type === AlertType.LIQUIDITY_DRAIN)?.level).toBe(AlertLevel.RED)

@@ -119,6 +119,7 @@ export interface ExecutionOrder {
 
 export interface UnstakeParams {
   gaugeAddress: `0x${string}`
+  positionManagerAddress: `0x${string}`
   tokenId: bigint
 }
 

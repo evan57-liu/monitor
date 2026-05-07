@@ -29,6 +29,7 @@ export function generateWithdrawalOrders(
   // 第 1 步：从 gauge 中取消质押 LP NFT
   const unstakeParams: UnstakeParams = {
     gaugeAddress: cfg.gaugeAddress as `0x${string}`,
+    positionManagerAddress: cfg.positionManagerAddress as `0x${string}`,
     tokenId: BigInt(cfg.lpTokenId),
   }
   orders.push(makeOrder(alert, cfg, groupId, seq++, OrderType.UNSTAKE, unstakeParams, deadline, now))

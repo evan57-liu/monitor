@@ -10,6 +10,7 @@ import {
   concat,
   numberToHex,
   maxUint128,
+  nonceManager,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base } from 'viem/chains'
@@ -30,6 +31,7 @@ const GAUGE_ABI = parseAbi([
 ])
 
 const POSITION_MANAGER_ABI = parseAbi([
+  'function ownerOf(uint256 tokenId) external view returns (address)',
   'function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, int24 tickSpacing, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)',
   'function decreaseLiquidity((uint256 tokenId, uint128 liquidity, uint256 amount0Min, uint256 amount1Min, uint256 deadline) params) external returns (uint256 amount0, uint256 amount1)',
   'function collect((uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max) params) external returns (uint256 amount0, uint256 amount1)',
@@ -58,6 +60,10 @@ const UNIVERSAL_ROUTER_ABI = parseAbi([
 
 const CL_POOL_OBSERVE_ABI = parseAbi([
   'function observe(uint32[] secondsAgos) view returns (int56[] tickCumulatives, uint160[] secondsPerLiquidityCumulativeX128s)',
+])
+
+const ERC20_ABI = parseAbi([
+  'function balanceOf(address owner) external view returns (uint256)',
 ])
 
 /** Universal Router command byte: V3_SWAP_EXACT_IN */
@@ -91,7 +97,7 @@ export class LiveExecutor implements Executor {
     private readonly cfg: LiveExecutorConfig,
     private readonly logger: pino.Logger,
   ) {
-    this.account = privateKeyToAccount(cfg.privateKey as `0x${string}`)
+    this.account = privateKeyToAccount(cfg.privateKey as `0x${string}`, { nonceManager })
     const clients = makeClients(cfg, this.account)
     this.walletClient = clients.walletClient
     this.publicClient = clients.publicClient
@@ -119,7 +125,48 @@ export class LiveExecutor implements Executor {
     }
   }
 
-  private async executeUnstake(_order: ExecutionOrder, params: UnstakeParams): Promise<ExecutionResult> {
+  private async executeUnstake(order: ExecutionOrder, params: UnstakeParams): Promise<ExecutionResult> {
+    // Pre-flight ownerOf check avoids sending a tx we know will revert and gives a clear diagnostic
+    let nftOwner: string | null = null
+    try {
+      nftOwner = await this.publicClient.readContract({
+        address: params.positionManagerAddress,
+        abi: POSITION_MANAGER_ABI,
+        functionName: 'ownerOf',
+        args: [params.tokenId],
+      })
+    } catch {
+      // ownerOf reverted — NFT is burned (position fully removed), nothing to unstake
+      this.logger.warn(
+        { orderId: order.id, tokenId: params.tokenId.toString() },
+        'Unstake skipped: NFT does not exist (already burned) — position fully removed',
+      )
+      return { status: OrderStatus.CONFIRMED, executedAt: new Date() }
+    }
+
+    const nftOwnerLower = nftOwner.toLowerCase()
+    const gaugeLower = params.gaugeAddress.toLowerCase()
+    const walletLower = this.account.address.toLowerCase()
+
+    if (nftOwnerLower === walletLower) {
+      // NFT is already in the wallet — unstake was done in a previous run, skip
+      this.logger.warn(
+        { orderId: order.id, tokenId: params.tokenId.toString() },
+        'Unstake skipped: NFT already in wallet (not staked) — proceeding to remove liquidity directly',
+      )
+      return { status: OrderStatus.CONFIRMED, executedAt: new Date() }
+    }
+
+    if (nftOwnerLower !== gaugeLower) {
+      const error = `unstake_preflight: nft.ownerOf(${params.tokenId})=${nftOwner} — not our wallet or gauge, cannot unstake`
+      this.logger.error(
+        { orderId: order.id, tokenId: params.tokenId.toString(), nftOwner, gauge: params.gaugeAddress, wallet: this.account.address },
+        'Unstake pre-flight failed: NFT owned by unexpected address',
+      )
+      return { status: OrderStatus.FAILED, error, executedAt: new Date() }
+    }
+
+    // nftOwner == gauge — normal path
     const txHash = await this.walletClient.writeContract({
       address: params.gaugeAddress,
       abi: GAUGE_ABI,
@@ -193,6 +240,55 @@ export class LiveExecutor implements Executor {
   }
 
   private async executeSwap(order: ExecutionOrder, params: SwapParams): Promise<ExecutionResult> {
+    // 读钱包当前 tokenIn 实际余额（真值），避免依赖上游估算导致 amountIn > 余额。
+    // batchIndex=0 时紧跟 remove_liquidity，公共 RPC 节点可能缓存旧 block 的 eth_call 状态，
+    // 导致 balanceOf 返回移除前的余额（通常为 0）。轮询直到余额非零或超时，再继续执行。
+    const POLL_RETRIES = params.batchIndex === 0 ? 5 : 0
+    const POLL_INTERVAL_MS = 3_000
+
+    let balance = 0n
+    for (let attempt = 0; attempt <= POLL_RETRIES; attempt++) {
+      balance = await this.publicClient.readContract({
+        address: params.tokenIn,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [this.account.address],
+      })
+      if (balance > 0n) break
+      if (attempt < POLL_RETRIES) {
+        this.logger.warn(
+          { orderId: order.id, batch: `${params.batchIndex + 1}/${params.totalBatches}`, attempt },
+          'balanceOf returned 0, RPC may be stale — retrying after 3s',
+        )
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+      }
+    }
+
+    const remaining = BigInt(params.totalBatches - params.batchIndex)
+    const isLastBatch = params.batchIndex === params.totalBatches - 1
+    const actualAmountIn = isLastBatch ? balance : balance / remaining
+
+    if (actualAmountIn === 0n) {
+      this.logger.warn(
+        { orderId: order.id, batch: `${params.batchIndex + 1}/${params.totalBatches}`, pollRetries: POLL_RETRIES },
+        'Swap skipped: no tokenIn in wallet after polling — position likely had 0 liquidity',
+      )
+      return { status: OrderStatus.CONFIRMED, executedAt: new Date() }
+    }
+
+    const actualAmountOutMin = params.amountIn > 0n
+      ? (params.amountOutMin * actualAmountIn) / params.amountIn
+      : 0n
+
+    this.logger.info({
+      orderId: order.id,
+      batch: `${params.batchIndex + 1}/${params.totalBatches}`,
+      walletBalance: balance.toString(),
+      actualAmountIn: actualAmountIn.toString(),
+      estimatedAmountIn: params.amountIn.toString(),
+      actualAmountOutMin: actualAmountOutMin.toString(),
+    }, 'Swap recalculated from live wallet balance')
+
     // path: tokenIn(20 bytes) + poolParam(3 bytes) + tokenOut(20 bytes)
     const path = concat([
       params.tokenIn,
@@ -204,7 +300,7 @@ export class LiveExecutor implements Executor {
     // isUni=false: 使用 Aerodrome CL (Slipstream) 池，非 UniswapV3 池
     const input = encodeAbiParameters(
       SWAP_INPUT_PARAMS,
-      [this.account.address, params.amountIn, params.amountOutMin, path, true, false],
+      [this.account.address, actualAmountIn, actualAmountOutMin, path, true, false],
     )
 
     const callArgs = {
@@ -220,7 +316,7 @@ export class LiveExecutor implements Executor {
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
       this.logger.error(
-        { orderId: order.id, error, routerAddress: params.routerAddress, path, amountIn: params.amountIn.toString(), amountOutMin: params.amountOutMin.toString() },
+        { orderId: order.id, error, routerAddress: params.routerAddress, path, actualAmountIn: actualAmountIn.toString(), actualAmountOutMin: actualAmountOutMin.toString() },
         'Swap simulation failed, aborting to avoid wasting gas',
       )
       return { status: OrderStatus.FAILED, error, executedAt: new Date() }

@@ -70,6 +70,8 @@ export class MarketMonitor {
         buys1h: poolData.buys1h,
         sells1h: poolData.sells1h,
         volume24h: poolData.volume24h,
+        reserve0: msUsdBalResult.value,
+        reserve1: usdcBalResult.value,
         fetchedAt: new Date(),
       }
     }

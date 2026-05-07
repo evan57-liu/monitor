@@ -16,6 +16,8 @@ function makeHistoryStore(): HistoryStore {
     getProtocolTvlAtOrBefore: vi.fn().mockReturnValue(null),
     insertPosition: vi.fn(),
     getPositionAtOrBefore: vi.fn().mockReturnValue(null),
+    insertPrice: vi.fn(),
+    insertPool: vi.fn(),
     _insertedSupply: insertedSupply,
   } as unknown as HistoryStore & { _insertedSupply: typeof insertedSupply }
 }
