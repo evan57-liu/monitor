@@ -84,7 +84,73 @@ function buildAlert(
 
 function formatMessage(type: AlertType, data: Record<string, unknown>, sustainedMs: number, confirmations: number): string {
   const mins = Math.round(sustainedMs / 60_000)
-  return `**Type:** ${type}\n**Sustained:** ${mins}m\n**Confirmations:** ${confirmations}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``
+  const detail = formatAlertDetail(type, data)
+  return [
+    `**持续时间：** ${mins} 分钟　｜　**确认数：** ${confirmations}`,
+    '',
+    detail,
+    '',
+    '---',
+    '',
+    '**原始数据**',
+    '',
+    `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``,
+  ].join('\n')
+}
+
+function n(v: unknown, fn: (x: number) => string, fallback = '—'): string {
+  return typeof v === 'number' ? fn(v) : fallback
+}
+
+function formatAlertDetail(type: AlertType, data: Record<string, unknown>): string {
+  switch (type) {
+    case AlertType.HACK_MINT: {
+      const windowH = n(data.supplyWindowSeconds, v => `${v / 3600}小时`)
+      return [
+        `**供应量增幅（过去${windowH}）：** ${n(data.supplyIncreasePct, v => `+${v.toFixed(2)}%`)}`,
+        `**当前总供应量：** ${n(data.totalSupply_msusd, v => v.toLocaleString('en-US'))} msUSD`,
+        `**价格偏离锚定：** ${n(data.priceDropPct, v => `−${v.toFixed(3)}%（当前约 $${(1 - v / 100).toFixed(4)}）`)}`,
+        `**卖出/买入比（1小时）：** ${data.sellsRatio === 'Infinity' ? '∞（无买单）' : n(data.sellsRatio, v => v.toFixed(2))}`,
+      ].join('\n')
+    }
+    case AlertType.DEPEG: {
+      const priceParts = [
+        data.coingeckoPrice_usd !== undefined ? `CoinGecko $${n(data.coingeckoPrice_usd, v => v.toFixed(4))}` : null,
+        data.twapPrice_usd !== undefined ? `TWAP $${n(data.twapPrice_usd, v => v.toFixed(4))}` : null,
+        data.debankPrice_usd !== undefined ? `DeBank $${n(data.debankPrice_usd, v => v.toFixed(4))}` : null,
+      ].filter((x): x is string => x !== null)
+      return [
+        `**当前价格：** ${priceParts.length > 0 ? priceParts.join('　/　') : '—'}`,
+        `**池子 msUSD 占比：** ${n(data.msUsdRatio, v => `${(v * 100).toFixed(2)}%`)}`,
+        `**池子价格：** ${data.poolPriceUsd !== undefined ? `$${n(data.poolPriceUsd, v => v.toFixed(4))}` : '—'}`,
+      ].join('\n')
+    }
+    case AlertType.LIQUIDITY_DRAIN: {
+      const windowH = n(data.tvlWindowSeconds, v => `${v / 3600}小时`)
+      return [
+        `**TVL 下降（过去${windowH}）：** ${n(data.tvlDropPct, v => `−${v.toFixed(2)}%`)}`,
+        `**当前 TVL：** ${n(data.tvlUsd, v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)}`,
+        `**池子 msUSD 占比：** ${n(data.msUsdRatio, v => `${(v * 100).toFixed(2)}%`)}`,
+        `**卖出/买入比（1小时）：** ${data.sellsBuysRatio === 'Infinity' ? '∞（无买单）' : n(data.sellsBuysRatio, v => v.toFixed(2))}`,
+      ].join('\n')
+    }
+    case AlertType.INSIDER_EXIT:
+      return [
+        `**钱包地址：** \`${String(data.wallet ?? '—')}\``,
+        `**流出金额：** ${n(data.outflowUsd, v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}`)}`,
+        `**价格偏离锚定：** ${n(data.priceDropPct, v => `−${v.toFixed(3)}%（当前约 $${(1 - v / 100).toFixed(4)}）`)}`,
+      ].join('\n')
+    case AlertType.POSITION_DROP: {
+      const windowH = n(data.windowSeconds, v => `${(v / 3600).toFixed(0)}小时`)
+      return [
+        `**仓位价值下跌（过去${windowH}）：** ${n(data.dropPct, v => `−${v.toFixed(2)}%`)}`,
+        `**当前仓位价值：** ${n(data.currentValue_usd, v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}`)}`,
+        `**基准仓位价值：** ${n(data.baselineValue_usd, v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}`)}`,
+      ].join('\n')
+    }
+    default:
+      return ''
+  }
 }
 
 // ── 告警规则 ──────────────────────────────────────────────────────────────────
@@ -114,7 +180,7 @@ function evaluateDepeg(state: AlertState, signals: AllSignals, cfg: AerodromeCon
   }
 
   return buildAlert(AlertType.DEPEG, state, confirmations, data, t, protocol,
-    `msUSD Depeg: ${price?.coingecko !== null && price?.coingecko !== undefined ? `$${price.coingecko.toFixed(4)}` : 'price unavailable'}`, now)
+    `msUSD 价格脱钩：${price?.coingecko !== null && price?.coingecko !== undefined ? `$${price.coingecko.toFixed(4)}` : '价格数据不可用'}`, now)
 }
 
 function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date, historyStore: HistoryStore): Alert | null {
@@ -146,7 +212,8 @@ function evaluateHackMint(state: AlertState, signals: AllSignals, cfg: Aerodrome
     if (sellsRatio >= t.sellsSpikeMultiplier) confirmations.add('sells')
   }
 
-  return buildAlert(AlertType.HACK_MINT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'msUSD Hack Mint Detected', now)
+  const hackMintAlert = buildAlert(AlertType.HACK_MINT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'msUSD 异常铸造检测', now)
+  return hackMintAlert?.level === AlertLevel.RED ? hackMintAlert : null
 }
 
 function evaluateLiquidityDrain(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date, historyStore: HistoryStore): Alert | null {
@@ -174,7 +241,8 @@ function evaluateLiquidityDrain(state: AlertState, signals: AllSignals, cfg: Aer
     if (sellsBuysRatio >= t.sellsBuysRatio) confirmations.add('sells')
   }
 
-  return buildAlert(AlertType.LIQUIDITY_DRAIN, state, confirmations, data, { sustainedSeconds: 120, requiredConfirmations: 2 }, protocol, 'Liquidity Drain Detected', now)
+  const liquidityAlert = buildAlert(AlertType.LIQUIDITY_DRAIN, state, confirmations, data, { sustainedSeconds: 120, requiredConfirmations: 2 }, protocol, '流动性抽取告警', now)
+  return liquidityAlert?.level === AlertLevel.RED ? liquidityAlert : null
 }
 
 function evaluateInsiderExit(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
@@ -204,7 +272,8 @@ function evaluateInsiderExit(state: AlertState, signals: AllSignals, cfg: Aerodr
     if (dropPct >= t.priceDropPct) confirmations.add('price')
   }
 
-  return buildAlert(AlertType.INSIDER_EXIT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'Insider Exit Signal', now)
+  const insiderAlert = buildAlert(AlertType.INSIDER_EXIT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, '内部套现信号', now)
+  return insiderAlert?.level === AlertLevel.RED ? insiderAlert : null
 }
 
 function evaluateOutOfRange(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
@@ -264,8 +333,20 @@ function evaluateOutOfRange(state: AlertState, signals: AllSignals, cfg: Aerodro
     type: AlertType.POSITION_OUT_OF_RANGE,
     level: AlertLevel.WARNING,
     protocol,
-    title: `LP Out of Range — Manual Rebalance Required (${minorityToken.symbol} ${minShare.toFixed(2)}%)`,
-    message: `**Type:** position_out_of_range\n**Sustained:** ${Math.round(sustainedMs / 60_000)}m\n**Dominant:** ${dominantToken.symbol} (${dominantToken.sharePct.toFixed(2)}%)\n**Minority:** ${minorityToken.symbol} (${minorityToken.sharePct.toFixed(2)}%)\n**Net USD:** $${position.netUsdValue.toFixed(2)}\n\`\`\`json\n${JSON.stringify({ shares, threshold: t.minTokenSharePct }, null, 2)}\n\`\`\``,
+    title: `LP 超出价格区间 — 需手动再平衡（${minorityToken.symbol} ${minShare.toFixed(2)}%）`,
+    message: [
+      `**持续时间：** ${Math.round(sustainedMs / 60_000)} 分钟`,
+      '',
+      `**主导代币：** ${dominantToken.symbol}（占比 ${dominantToken.sharePct.toFixed(2)}%）`,
+      `**少数代币：** ${minorityToken.symbol}（占比 ${minorityToken.sharePct.toFixed(2)}%）`,
+      `**仓位净值：** $${position.netUsdValue.toFixed(2)}`,
+      '',
+      '---',
+      '',
+      '**原始数据**',
+      '',
+      `\`\`\`json\n${JSON.stringify({ shares, threshold: t.minTokenSharePct }, null, 2)}\n\`\`\``,
+    ].join('\n'),
     data: { minSharePct: minShare, shares, totalUsd, threshold: t.minTokenSharePct },
     triggeredAt: now,
     confirmations: 1,
@@ -283,19 +364,35 @@ export function buildPriceFloorAbortAlert(
   protocol: string,
 ): Alert {
   const now = new Date()
-  const priceStr = floor.effectivePrice !== null ? `$${floor.effectivePrice.toFixed(4)}` : 'unavailable'
+  const priceStr = floor.effectivePrice !== null ? `$${floor.effectivePrice.toFixed(4)}` : '不可用'
   const floorStr = `$${floorValue.toFixed(2)}`
+  const srcFmt = (v: number | null) => v !== null ? `$${v.toFixed(4)}` : '不可用'
   const title = floor.reason === 'all_sources_unavailable'
-    ? '⚠️ ALL PRICE SOURCES DOWN — Withdrawal aborted, MANUAL ACTION MAY BE REQUIRED'
-    : `Withdrawal aborted: price floor breach (${priceStr} < ${floorStr})`
+    ? '⚠️ 全部价格来源不可用 — 撤出已中止，请人工介入'
+    : `撤出已中止：价格低于地板价（${priceStr} < ${floorStr}）`
+  const triggeringTypes = triggeringAlerts.map(a => a.type)
+  const data = { reason: floor.reason, effectivePrice: floor.effectivePrice, floorValue, sources: floor.sources, triggeringTypes }
+  const message = [
+    `**原因：** ${{ ok: '价格正常', below_floor: '价格低于地板价', all_sources_unavailable: '全部价格来源不可用' }[floor.reason] ?? floor.reason}`,
+    `**有效价格：** ${priceStr}`,
+    `**价格地板：** ${floorStr}`,
+    `**价格来源：** CoinGecko ${srcFmt(floor.sources.coingecko)}　TWAP ${srcFmt(floor.sources.twap)}　DeBank ${srcFmt(floor.sources.debank)}`,
+    `**被抑制告警：** ${triggeringTypes.join('、')}`,
+    '',
+    '---',
+    '',
+    '**原始数据**',
+    '',
+    `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``,
+  ].join('\n')
   return {
     id: crypto.randomUUID(),
     type: AlertType.WITHDRAWAL_ABORTED,
     level: AlertLevel.WARNING,
     protocol,
     title,
-    message: `**Reason:** ${floor.reason}\n**Effective price:** ${priceStr}\n**Floor:** ${floorStr}\n**Sources:** ${JSON.stringify(floor.sources)}\n**Suppressed alerts:** ${triggeringAlerts.map(a => a.type).join(', ')}`,
-    data: { reason: floor.reason, effectivePrice: floor.effectivePrice, floorValue, sources: floor.sources, triggeringTypes: triggeringAlerts.map(a => a.type) },
+    message,
+    data,
     triggeredAt: now,
     confirmations: 0,
     requiredConfirmations: 0,
@@ -326,5 +423,5 @@ function evaluatePositionDrop(state: AlertState, signals: AllSignals, cfg: Aerod
   const dropStr = typeof data.dropPct === 'number' ? (data.dropPct as number).toFixed(1) : '?'
   return buildAlert(AlertType.POSITION_DROP, state, confirmations, data,
     { sustainedSeconds: t.sustainedSeconds, requiredConfirmations: t.requiredConfirmations },
-    protocol, `Position Value Drop: -${dropStr}%`, now)
+    protocol, `仓位价值下跌 −${dropStr}%`, now)
 }

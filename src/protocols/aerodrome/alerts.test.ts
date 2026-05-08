@@ -238,7 +238,7 @@ describe('evaluateAlerts — hack_mint', () => {
     expect(alert?.level).toBe(AlertLevel.RED)
   })
 
-  it('adds sells confirmation when buys1h=0 (zero-buy extreme signal), but stays WARNING without other confirmations', () => {
+  it('adds sells confirmation when buys1h=0 (zero-buy extreme signal), but suppresses alert without other confirmations', () => {
     const state = new Map()
     const store = makeHistoryStub({ supply: [[oneHourAgo, 1_000_000n * 10n ** 18n]] })
     const signals = makeSignals({
@@ -246,8 +246,8 @@ describe('evaluateAlerts — hack_mint', () => {
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
-    // 仅 sells 一个确认（共需 2 个）→ WARNING，不升 RED
-    expect(alert?.level).toBe(AlertLevel.WARNING)
+    // 仅 sells 一个确认（共需 2 个）→ 不 emit 告警，避免邮件噪音
+    expect(alert).toBeUndefined()
   })
 
   it('stale single-source confirmation does not persist to RED (accumulated state bug)', () => {
@@ -260,8 +260,8 @@ describe('evaluateAlerts — hack_mint', () => {
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.HACK_MINT)
-    expect(alert?.level).toBe(AlertLevel.WARNING) // 仅 'sells' 当前活跃 → 1/2 → WARNING
-    expect(alert?.confirmations).toBe(1)
+    // 仅 'sells' 当前活跃 → 1/2 → 不 emit 告警（RED-only 策略）
+    expect(alert).toBeUndefined()
   })
 })
 
@@ -440,7 +440,7 @@ describe('evaluateAlerts — position_out_of_range', () => {
     const alerts = evaluate(state, signals)
     const alert = alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)
     expect(alert?.level).toBe(AlertLevel.WARNING)
-    expect(alert?.title).toContain('Manual Rebalance Required')
+    expect(alert?.title).toContain('需手动再平衡')
   })
 
   it('suppresses repeated alerts within cooldown window (24h)', () => {
