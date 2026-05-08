@@ -32,16 +32,15 @@ export class CoinGeckoClient {
 
   constructor(private readonly cfg: CoinGeckoConfig, private readonly logger?: pino.Logger) {}
 
-  async getTokenPrice(tokenAddress: string): Promise<TokenPrice> {
-    return this.requestCache.get(`token:${tokenAddress}`, async () => {
-      const url = `${this.cfg.baseUrl}/onchain/simple/networks/base/token_price/${tokenAddress}`
+  async getTokenPrice(coinId: string): Promise<TokenPrice> {
+    return this.requestCache.get(`token:${coinId}`, async () => {
+      const url = `${this.cfg.baseUrl}/simple/price?ids=${coinId}&vs_currencies=usd`
       const raw = await this.fetch(url)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tokenPrices = (raw as any).data.attributes.token_prices as Record<string, string>
-      const priceStr = tokenPrices[tokenAddress]
-      if (!priceStr) throw new Error(`CoinGecko returned no price for token ${tokenAddress}`)
+      const priceMap = raw as Record<string, { usd: number }>
+      const entry = priceMap[coinId]
+      if (!entry) throw new Error(`CoinGecko returned no price for coin ${coinId}`)
       return {
-        priceUsd: parseFloat(priceStr),
+        priceUsd: entry.usd,
         fetchedAt: new Date(),
       }
     })

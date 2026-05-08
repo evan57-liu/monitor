@@ -9,14 +9,8 @@ const API_KEY = 'test-key'
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-function makeTokenResponse(address: string, price: number) {
-  return {
-    data: {
-      attributes: {
-        token_prices: { [address]: price.toString() },
-      },
-    },
-  }
+function makeTokenResponse(coinId: string, price: number) {
+  return { [coinId]: { usd: price } }
 }
 
 function makePoolResponse(opts: { buys1h: number; sells1h: number }) {
@@ -44,21 +38,21 @@ describe('CoinGeckoClient', () => {
   it('fetches token price', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => makeTokenResponse('0xabc123', 0.9985),
+      json: async () => makeTokenResponse('metronome-synth-usd', 0.9985),
     })
     const client = new CoinGeckoClient({ baseUrl: BASE_URL, apiKey: API_KEY, timeoutMs: 5000, retryAttempts: 1 })
-    const result = await client.getTokenPrice('0xabc123')
+    const result = await client.getTokenPrice('metronome-synth-usd')
     expect(result.priceUsd).toBeCloseTo(0.9985)
     expect(fetchMock).toHaveBeenCalledOnce()
     const url = fetchMock.mock.calls[0]?.[0] as string
-    expect(url).toContain('/onchain/simple/networks/base/token_price/0xabc123')
+    expect(url).toContain('/simple/price?ids=metronome-synth-usd&vs_currencies=usd')
   })
 
   it('returns cached result within TTL', async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => makeTokenResponse('0xabc123', 1.0) })
+    fetchMock.mockResolvedValue({ ok: true, json: async () => makeTokenResponse('metronome-synth-usd', 1.0) })
     const client = new CoinGeckoClient({ baseUrl: BASE_URL, apiKey: API_KEY, timeoutMs: 5000, retryAttempts: 1 })
-    await client.getTokenPrice('0xabc123')
-    await client.getTokenPrice('0xabc123') // should use cache
+    await client.getTokenPrice('metronome-synth-usd')
+    await client.getTokenPrice('metronome-synth-usd') // should use cache
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
@@ -76,6 +70,6 @@ describe('CoinGeckoClient', () => {
   it('throws on non-200 response', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
     const client = new CoinGeckoClient({ baseUrl: BASE_URL, apiKey: API_KEY, timeoutMs: 5000, retryAttempts: 1 })
-    await expect(client.getTokenPrice('0xabc')).rejects.toThrow('CoinGecko API error: 429')
+    await expect(client.getTokenPrice('metronome-synth-usd')).rejects.toThrow('CoinGecko API error: 429')
   })
 })
