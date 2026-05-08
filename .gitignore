@@ -6,3 +6,5 @@ configs/.env
 !configs/.env.example
 logs/
 docs/
+
+.idea

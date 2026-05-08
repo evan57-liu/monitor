@@ -8,12 +8,12 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/57block/.nvm/versions/node/v22.21.1/bin/node</string>
-    <string>/Users/57block/web3project/monitor/dist/main.js</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/mg/web3project/monitor/dist/main.js</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/57block/web3project/monitor</string>
+  <string>/Users/mg/web3project/monitor</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -35,9 +35,9 @@
 
   <!-- Log output -->
   <key>StandardOutPath</key>
-  <string>/Users/57block/web3project/monitor/logs/stdout.log</string>
+  <string>/Users/mg/web3project/monitor/logs/stdout.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/57block/web3project/monitor/logs/stderr.log</string>
+  <string>/Users/mg/web3project/monitor/logs/stderr.log</string>
 </dict>
 </plist>
