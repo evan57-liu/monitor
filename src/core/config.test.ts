@@ -43,6 +43,9 @@ notifications:
   healthchecks:
     enabled: false
     interval_seconds: 60
+  routing:
+    critical_types:
+      - position_out_of_range
 protocols:
   aerodrome_msusd_usdc:
     enabled: true
@@ -86,6 +89,10 @@ protocols:
       position_drop:
         drop_pct: 10
         window_seconds: 3600
+      position_out_of_range:
+        min_token_share_pct: 5
+        sustained_seconds: 300
+        cooldown_seconds: 86400
     execution:
       swap_batch_count: 3
       swap_slippage_bps: 100

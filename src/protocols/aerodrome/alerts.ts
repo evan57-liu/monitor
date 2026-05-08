@@ -32,6 +32,7 @@ export function evaluateAlerts(
   push(evaluateLiquidityDrain(state, signals, cfg, protocol, now, historyStore))
   push(evaluateInsiderExit(state, signals, cfg, protocol, now))
   push(evaluatePositionDrop(state, signals, cfg, protocol, now, historyStore, walletAddress))
+  push(evaluateOutOfRange(state, signals, cfg, protocol, now))
 
   return alerts
 }
@@ -204,6 +205,74 @@ function evaluateInsiderExit(state: AlertState, signals: AllSignals, cfg: Aerodr
   }
 
   return buildAlert(AlertType.INSIDER_EXIT, state, confirmations, data, { sustainedSeconds: 60, requiredConfirmations: 2 }, protocol, 'Insider Exit Signal', now)
+}
+
+function evaluateOutOfRange(state: AlertState, signals: AllSignals, cfg: AerodromeConfig, protocol: string, now: Date): Alert | null {
+  const t = cfg.alerts.positionOutOfRange
+  const position = signals.position
+  if (!position || position.supplyTokens.length < 2) {
+    state.delete(AlertType.POSITION_OUT_OF_RANGE)
+    return null
+  }
+
+  const totalUsd = position.supplyTokens.reduce((s, x) => s + x.usdValue, 0)
+  if (totalUsd <= 0) {
+    state.delete(AlertType.POSITION_OUT_OF_RANGE)
+    return null
+  }
+
+  const shares = position.supplyTokens.map(x => ({ ...x, sharePct: (x.usdValue / totalUsd) * 100 }))
+  const minShare = Math.min(...shares.map(x => x.sharePct))
+  const isOutOfRange = minShare < t.minTokenSharePct
+
+  if (!isOutOfRange) {
+    state.delete(AlertType.POSITION_OUT_OF_RANGE)
+    return null
+  }
+
+  const entry = state.get(AlertType.POSITION_OUT_OF_RANGE)
+  if (!entry) {
+    state.set(AlertType.POSITION_OUT_OF_RANGE, {
+      firstTriggered: now,
+      confirmations: new Set(['range']),
+      lastData: { minShare, shares, lastNotifiedAt: 0 },
+    })
+    return null
+  }
+
+  const sustainedMs = now.getTime() - entry.firstTriggered.getTime()
+  if (sustainedMs < t.sustainedSeconds * 1000) {
+    entry.lastData = { ...entry.lastData, minShare, shares }
+    return null
+  }
+
+  const rawNotified = entry.lastData['lastNotifiedAt']
+  const lastNotifiedAt = typeof rawNotified === 'number' ? rawNotified : 0
+  if (lastNotifiedAt > 0 && now.getTime() - lastNotifiedAt < t.cooldownSeconds * 1000) {
+    return null
+  }
+
+  entry.lastData = { ...entry.lastData, minShare, shares, lastNotifiedAt: now.getTime() }
+
+  const [dominantToken, minorityToken] = shares.reduce<[typeof shares[0], typeof shares[0]]>(
+    ([dom, min], x) => [x.sharePct > dom.sharePct ? x : dom, x.sharePct < min.sharePct ? x : min],
+    [shares[0]!, shares[0]!],
+  )
+
+  return {
+    id: crypto.randomUUID(),
+    type: AlertType.POSITION_OUT_OF_RANGE,
+    level: AlertLevel.WARNING,
+    protocol,
+    title: `LP Out of Range — Manual Rebalance Required (${minorityToken.symbol} ${minShare.toFixed(2)}%)`,
+    message: `**Type:** position_out_of_range\n**Sustained:** ${Math.round(sustainedMs / 60_000)}m\n**Dominant:** ${dominantToken.symbol} (${dominantToken.sharePct.toFixed(2)}%)\n**Minority:** ${minorityToken.symbol} (${minorityToken.sharePct.toFixed(2)}%)\n**Net USD:** $${position.netUsdValue.toFixed(2)}\n\`\`\`json\n${JSON.stringify({ shares, threshold: t.minTokenSharePct }, null, 2)}\n\`\`\``,
+    data: { minSharePct: minShare, shares, totalUsd, threshold: t.minTokenSharePct },
+    triggeredAt: now,
+    confirmations: 1,
+    requiredConfirmations: 1,
+    sustainedMs,
+    requiredSustainedMs: t.sustainedSeconds * 1000,
+  }
 }
 
 // 用 WITHDRAWAL_ABORTED 而非 DATA_SOURCE_FAILURE，确保审计日志语义清晰。

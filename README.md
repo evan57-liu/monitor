@@ -1228,7 +1228,7 @@ src/
     aerodrome/
       index.ts     ← 实现 Monitor 接口（6 路并行采集）
       types.ts     ← 协议专用信号类型
-      alerts.ts    ← 5 条告警规则 + 状态机（最核心逻辑）
+      alerts.ts    ← 6 条告警规则 + 状态机（最核心逻辑）
       orders.ts    ← 3 步撤出订单生成
       monitors/
         price.ts   ← msUSD 价格（CoinGecko 主 + TWAP 备）
@@ -1316,6 +1316,21 @@ RED 级告警不会直接触发撤出，必须同时通过两道检查：
 2. 状态持续 ≥ 5 分钟（避免 DeBank 数据短暂波动误报）
 
 这是最后的防线，可**独立**触发撤出（无需攻击类佐证），但价格地板（闸 2）同样生效。
+
+### Position Out of Range（LP 掉出价格区间）
+
+**触发条件**（单源确认 + 持续 5 分钟）：
+1. DeBank 返回的 `supply_token_list` 中，任一代币的 USD 价值占仓位总值的比例 < 5%
+   - CL 仓位在区间内时两边代币都有余额；价格滑出区间后一边趋近 0
+2. 状态持续 ≥ 5 分钟（防止边界处短暂抖动误报）
+
+**通知行为**：
+- 告警级别：WARNING（不进入撤出流程，不触发任何链上操作）
+- 通知渠道：Server酱 + 邮件（通过 `notifications.routing.critical_types` 强制双通道）
+- 冷却时间：24 小时（同一次掉出事件不重复打扰）
+- 区间恢复后：自动清除告警状态，下次掉出重新计时
+
+**处理方式**：收到通知后前往 Aerodrome 手动 rebalance，将仓位调回新的价格区间。
 
 ---
 

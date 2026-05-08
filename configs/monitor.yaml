@@ -47,6 +47,10 @@ notifications:
     # 配置步骤：
     # 1. 在 https://healthchecks.io 创建新 Check，Period=5min，Grace=5min
     # 2. 复制 Ping URL 填入 configs/.env 的 DM_HEALTHCHECKS_PING_URL
+  routing:
+    critical_types: # 即使是 WARNING 级别，匹配此列表的告警类型也走双通道（Server酱 + 邮件）
+      - position_out_of_range  # LP 偏移需人工 rebalance
+      - withdrawal_aborted     # 价格源全挂或价格地板被触穿，需人工处理
 
 protocols:
   aerodrome_msusd_usdc:
@@ -123,6 +127,11 @@ protocols:
         window_seconds: 3600 # 窗口：取 SQLite 中 recorded_at <= now-1h 的最近一条与当前值比对（最后防线）
         sustained_seconds: 300 # 持续满足此秒数才升 RED，防止瞬间误触
         required_confirmations: 1 # 仅 DeBank 一个数据源
+
+      position_out_of_range:
+        min_token_share_pct: 1 # 单边代币占仓位总 USD 的比例 < 1% 视为掉出价格区间
+        sustained_seconds: 300 # 需持续 5 分钟才发通知（防止边界抖动）
+        cooldown_seconds: 86400 # 同一次掉出事件 24h 内只通知一次
 
     execution:
       swap_batch_count: 3 # 分 3 批兑换 msUSD → USDC，批次之间重新检查价格地板

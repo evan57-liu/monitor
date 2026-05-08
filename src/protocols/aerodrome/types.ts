@@ -1,6 +1,7 @@
 // src/protocols/aerodrome/types.ts
 // Aerodrome 监控器的内部信号类型。不从 core/types.ts 导出，
 // 因为这些类型是协议特有的。
+import type { SupplyToken } from '../../core/clients/debank.js'
 
 export interface PriceSignal {
   coingecko: number | null    // null = 数据源不可用
@@ -29,6 +30,7 @@ export interface PositionSignal {
   netUsdValue: number
   rewardUsdValue: number           // AERO 等奖励的 USD 价值（透明拆分）
   debankMsUsdPrice: number | null  // DeBank 返回的 msUSD 价格，null = 数据不可用
+  supplyTokens: SupplyToken[]
   fetchedAt: Date
 }
 

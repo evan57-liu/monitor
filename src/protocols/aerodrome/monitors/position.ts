@@ -22,7 +22,7 @@ export class PositionMonitor {
       const debankMsUsdPrice = pos.supplyTokenPrices[this.cfg.msUsdAddress.toLowerCase()] ?? null
       const now = new Date()
       this.historyStore.insertPosition(this.cfg.monitorId, this.cfg.walletAddress, pos.netUsdValue, now)
-      return { netUsdValue: pos.netUsdValue, rewardUsdValue: pos.rewardUsdValue, debankMsUsdPrice, fetchedAt: now }
+      return { netUsdValue: pos.netUsdValue, rewardUsdValue: pos.rewardUsdValue, debankMsUsdPrice, supplyTokens: pos.supplyTokens, fetchedAt: now }
     } catch (err) {
       this.logger?.warn({ err, walletAddress: this.cfg.walletAddress, protocolId: this.cfg.protocolId }, 'PositionMonitor: DeBank fetch failed')
       return null

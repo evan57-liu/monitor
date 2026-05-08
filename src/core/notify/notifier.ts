@@ -1,14 +1,16 @@
-import { AlertLevel } from '../types.js'
+import { AlertLevel, AlertType } from '../types.js'
 import type { Alert, NotificationChannel, Notification } from '../types.js'
 
 interface NotifierOptions {
   criticalChannels?: string[]   // 用于 RED 级别告警的渠道名称列表
   normalChannels?: string[]     // 用于 WARNING 级别告警的渠道名称列表
+  criticalTypes?: AlertType[]   // 即使是 WARNING 级别，匹配此列表的告警类型也走 criticalChannels
 }
 
 const DEFAULT_OPTS: Required<NotifierOptions> = {
   criticalChannels: ['serverchan', 'email'],
-  normalChannels: ['serverchan'],
+  normalChannels: ['email'],
+  criticalTypes: [],
 }
 
 export class Notifier {
@@ -22,9 +24,8 @@ export class Notifier {
   }
 
   async notifyAlert(alert: Alert): Promise<void> {
-    const channelNames = alert.level === AlertLevel.RED
-      ? this.opts.criticalChannels
-      : this.opts.normalChannels
+    const isCritical = alert.level === AlertLevel.RED || this.opts.criticalTypes.includes(alert.type)
+    const channelNames = isCritical ? this.opts.criticalChannels : this.opts.normalChannels
 
     const notification: Notification = {
       title: alert.title,
@@ -38,7 +39,7 @@ export class Notifier {
 
   async sendDailySummary(markdown: string): Promise<void> {
     const notification: Notification = {
-      title: `📊 Daily Monitor Summary — ${new Date().toLocaleDateString()}`,
+      title: `Daily Monitor Summary — ${new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
       body: markdown,
       level: AlertLevel.INFO,
     }

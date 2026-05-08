@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { privateKeyToAccount } from 'viem/accounts'
 import { loadConfig } from './core/config.js'
+import { AlertType } from './core/types.js'
 import { initLogger } from './core/logger.js'
 import { openDb, closeDb, runRetentionCleanup } from './core/storage/index.js'
 import { CoinGeckoClient } from './core/clients/coingecko.js'
@@ -80,7 +81,7 @@ async function main(): Promise<void> {
       retryAttempts: cfg.notifications.email.retryAttempts,
     }))
   }
-  const notifier = new Notifier(channels)
+  const notifier = new Notifier(channels, { criticalTypes: cfg.notifications.routing.criticalTypes as AlertType[] })
 
   // 启动时测试所有通知渠道
   const testResults = await notifier.testAll()
@@ -135,6 +136,9 @@ async function main(): Promise<void> {
   scheduleDailyAt(cfg.notifications.email.dailySummaryHour, async () => {
     runRetentionCleanup(db, cfg.storage.retentionDays)
     logger.info('Data retention cleanup ran')
+    const summary = buildDailySummary(db)
+    await notifier.sendDailySummary(summary)
+    logger.info('Daily summary email sent')
   })
 
   // ── 启动 ─────────────────────────────────────────────────────────────────────
@@ -165,14 +169,63 @@ async function main(): Promise<void> {
 function scheduleDailyAt(hour: number, fn: () => Promise<void>): void {
   let lastRanDay: number | null = null
   const checkAndRun = () => {
-    const now = new Date()
-    const today = now.getDate()
-    if (now.getHours() === hour && lastRanDay !== today) {
-      lastRanDay = today
+    // 使用上海时区判断小时，避免 launchd 环境下 TZ 不继承
+    const parts = new Intl.DateTimeFormat('zh-CN', { hour: 'numeric', hour12: false, day: 'numeric', timeZone: 'Asia/Shanghai' }).formatToParts(new Date())
+    const nowHour = Number(parts.find(p => p.type === 'hour')?.value)
+    const nowDay = Number(parts.find(p => p.type === 'day')?.value)
+    if (nowHour === hour && lastRanDay !== nowDay) {
+      lastRanDay = nowDay
       void fn()
     }
   }
   setInterval(checkAndRun, 30 * 60 * 1000)
+}
+
+function buildDailySummary(db: ReturnType<typeof openDb>): string {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  type AlertRow = { type: string; level: string; title: string; triggered_at: string }
+  const alerts = db.prepare<[string], AlertRow>(
+    `SELECT type, level, title, triggered_at FROM alerts WHERE triggered_at >= ? ORDER BY triggered_at DESC`,
+  ).all(since)
+
+  type ExecRow = { order_type: string; status: string; executed_at: string | null }
+  const execs = db.prepare<[string], ExecRow>(
+    `SELECT order_type, status, executed_at FROM executions WHERE created_at >= ? ORDER BY created_at DESC`,
+  ).all(since)
+
+  type PosRow = { net_usd_value: number; recorded_at: string }
+  const latestPos = db.prepare<[], PosRow>(
+    `SELECT net_usd_value, recorded_at FROM position_history ORDER BY recorded_at DESC LIMIT 1`,
+  ).get()
+
+  const lines: string[] = [`## DeFi Monitor 每日运营摘要 — ${new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`]
+
+  if (latestPos != null) {
+    lines.push(`**仓位净值（最新）**：$${latestPos.net_usd_value.toFixed(2)}（${latestPos.recorded_at}）\n`)
+  }
+
+  lines.push(`### 过去 24 小时告警（共 ${alerts.length} 条）\n`)
+  if (alerts.length === 0) {
+    lines.push('无告警，系统运行正常。\n')
+  } else {
+    for (const a of alerts) {
+      lines.push(`- [${a.level}] ${a.type} — ${a.title}（${a.triggered_at}）`)
+    }
+    lines.push('')
+  }
+
+  lines.push(`### 过去 24 小时链上操作（共 ${execs.length} 笔）\n`)
+  if (execs.length === 0) {
+    lines.push('无链上操作。\n')
+  } else {
+    for (const e of execs) {
+      lines.push(`- ${e.order_type} → ${e.status}（${e.executed_at ?? '—'}）`)
+    }
+    lines.push('')
+  }
+
+  return lines.join('\n')
 }
 
 main().catch(err => {

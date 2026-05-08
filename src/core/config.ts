@@ -20,6 +20,7 @@ export interface AppConfig {
       from: string; to: string[]; retryAttempts: number; dailySummaryHour: number
     }
     healthchecks: { enabled: boolean; pingUrl: string; intervalSeconds: number }
+    routing: { criticalTypes: string[] }
   }
   protocols: { aerodromeMusdUsdc: AerodromeConfig }
   storage: { sqlitePath: string; retentionDays: { priceHistory: number; poolSnapshots: number; healthSnapshots: number; tvlHistory: number; positionHistory: number } }
@@ -48,6 +49,7 @@ export interface AerodromeConfig {
     liquidityDrain: { tvlDropPct: number; tvlWindowSeconds: number; poolMsUsdRatioPct: number; sellsBuysRatio: number }
     insiderExit: { largeOutflowUsd: number; priceDropPct: number }
     positionDrop: { dropPct: number; windowSeconds: number; sustainedSeconds: number; requiredConfirmations: number }
+    positionOutOfRange: { minTokenSharePct: number; sustainedSeconds: number; cooldownSeconds: number }
   }
   execution: { swapBatchCount: number; swapSlippageBps: number; swapPoolParam: number; gasMultiplier: number; deadlineSeconds: number; maxGasGwei: number; minPriceToSwap: number; priceFloorRequired: boolean }
 }
@@ -104,6 +106,7 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
       serverchan: { enabled: y.notifications.serverchan.enabled, sendkey: process.env['DM_SERVERCHAN_SENDKEY'] ?? '', timeoutMs: y.notifications.serverchan.timeout_ms, retryAttempts: y.notifications.serverchan.retry_attempts },
       email: { enabled: y.notifications.email.enabled, smtpHost: y.notifications.email.smtp_host, smtpPort: y.notifications.email.smtp_port, user: process.env['DM_EMAIL_USER'] ?? '', password: process.env['DM_EMAIL_PASSWORD'] ?? '', from: y.notifications.email.from, to: y.notifications.email.to as string[], retryAttempts: y.notifications.email.retry_attempts, dailySummaryHour: y.notifications.email.daily_summary_hour },
       healthchecks: { enabled: y.notifications.healthchecks.enabled, pingUrl: process.env['DM_HEALTHCHECKS_PING_URL'] ?? '', intervalSeconds: y.notifications.healthchecks.interval_seconds },
+      routing: { criticalTypes: (y.notifications.routing?.critical_types ?? []) as string[] },
     },
     protocols: {
       aerodromeMusdUsdc: {
@@ -128,6 +131,7 @@ export function loadConfig(yamlPath: string, envPath: string, keychainReader?: K
           liquidityDrain: { tvlDropPct: ae.alerts.liquidity_drain.tvl_drop_pct, tvlWindowSeconds: ae.alerts.liquidity_drain.tvl_window_seconds, poolMsUsdRatioPct: ae.alerts.liquidity_drain.pool_msusd_ratio_pct, sellsBuysRatio: ae.alerts.liquidity_drain.sells_buys_ratio },
           insiderExit: { largeOutflowUsd: ae.alerts.insider_exit.large_outflow_usd, priceDropPct: ae.alerts.insider_exit.price_drop_pct },
           positionDrop: { dropPct: ae.alerts.position_drop.drop_pct, windowSeconds: ae.alerts.position_drop.window_seconds, sustainedSeconds: ae.alerts.position_drop.sustained_seconds as number, requiredConfirmations: ae.alerts.position_drop.required_confirmations as number },
+          positionOutOfRange: { minTokenSharePct: ae.alerts.position_out_of_range.min_token_share_pct as number, sustainedSeconds: ae.alerts.position_out_of_range.sustained_seconds as number, cooldownSeconds: ae.alerts.position_out_of_range.cooldown_seconds as number },
         },
         execution: { swapBatchCount: ae.execution.swap_batch_count, swapSlippageBps: ae.execution.swap_slippage_bps, swapPoolParam: ae.execution.swap_pool_param as number, gasMultiplier: ae.execution.gas_multiplier, deadlineSeconds: ae.execution.deadline_seconds, maxGasGwei: ae.execution.max_gas_gwei, minPriceToSwap: ae.execution.min_price_to_swap as number, priceFloorRequired: ae.execution.price_floor_required as boolean },
       },

@@ -11,7 +11,7 @@ function makeSignals(coingecko: number | null, twap: number | null, debank: numb
     pool: null,
     supply: null,
     position: debank !== null
-      ? { debankMsUsdPrice: debank, netUsdValue: 100, rewardUsdValue: 0, fetchedAt: NOW }
+      ? { debankMsUsdPrice: debank, netUsdValue: 100, rewardUsdValue: 0, supplyTokens: [], fetchedAt: NOW }
       : null,
     protocol: null,
     wallets: null,

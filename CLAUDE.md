@@ -34,7 +34,7 @@ src/core/        ← 与协议无关的基础设施
 
 src/protocols/aerodrome/
   index.ts       ← 实现 Monitor 接口（入口）
-  alerts.ts      ← 5 条告警规则及状态机 ← 最核心的逻辑
+  alerts.ts      ← 6 条告警规则及状态机 ← 最核心的逻辑
   orders.ts      ← 3 步撤出订单生成
   monitors/      ← 各数据抓取器（price、pool、supply、position、protocol、wallets）
 ```
@@ -55,11 +55,14 @@ src/protocols/aerodrome/
 - `liquidity_drain` — Metronome TVL 在过去 1 小时（`tvl_window_seconds`）内下降 > 30%，池子失衡
 - `insider_exit` — 团队钱包大额流出 + 价格下跌
 - `position_drop` — LP 仓位在过去 1 小时（`window_seconds`）内价值下跌 > 配置阈值（最后防线，独立触发）
+- `position_out_of_range` — CL 仓位单边代币占比 < `min_token_share_pct`（默认 5%），持续 5 分钟后通知（WARNING 级，Server酱 + 邮件，不触发撤出，24h 冷却；属于 criticalTypes，走双通道）
+
+**通知路由**：RED 级 → Server酱 + 邮件；WARNING 级 → 仅邮件（`criticalTypes` 中的类型除外，走双通道）。Server酱 每日限 5 条，非紧急告警不占配额。
 
 **两道闸（撤出必须同时通过）**：
 
 1. **复合确认**：`depeg RED` 必须与 `hack_mint / liquidity_drain / insider_exit` 任一 RED 同时存在才能触发撤出；`position_drop RED` 可独立触发。
-2. **价格地板**：`max(coingecko, twap, debank) ≥ $0.92`；三源全不可用时拒绝撤出（fail-closed），写 `WITHDRAWAL_ABORTED` 告警通知运维人工处理。
+2. **价格地板**：`max(coingecko, twap, debank) ≥ $0.92`；三源全不可用时拒绝撤出（fail-closed），写 `WITHDRAWAL_ABORTED` 告警通知运维人工处理（属于 criticalTypes，走双通道）。
 
 撤出序列：unstake → remove_liquidity → `[price_floor_guard + swap] × 3 批`。每批 swap 前门控订单重新检查链上 TWAP + DeBank 价格，破地板则中止剩余批次。
 

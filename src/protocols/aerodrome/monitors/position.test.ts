@@ -24,8 +24,8 @@ const baseCfg = { walletAddress: '0xuser', protocolId: 'base_aerodrome3', poolId
 describe('PositionMonitor', () => {
   it('writes netUsdValue to history store on each call', async () => {
     vi.mocked(mockDeBank.getUserProtocolPosition)
-      .mockResolvedValueOnce({ netUsdValue: 18000, assetUsdValue: 18000, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, fetchedAt: new Date() })
-      .mockResolvedValueOnce({ netUsdValue: 17500, assetUsdValue: 17500, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, fetchedAt: new Date() })
+      .mockResolvedValueOnce({ netUsdValue: 18000, assetUsdValue: 18000, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, supplyTokens: [], fetchedAt: new Date() })
+      .mockResolvedValueOnce({ netUsdValue: 17500, assetUsdValue: 17500, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {}, supplyTokens: [], fetchedAt: new Date() })
     const store = makeHistoryStore()
     const m = new PositionMonitor(baseCfg, mockDeBank, store)
     const s1 = await m.check()
@@ -51,6 +51,7 @@ describe('PositionMonitor', () => {
         '0x526728dbc96689597f85ae4cd716d4f7fccbae9d': 0.9964,
         '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 1.0,
       },
+      supplyTokens: [],
       fetchedAt: new Date(),
     })
     const m = new PositionMonitor(baseCfg, mockDeBank, makeHistoryStore())
@@ -62,7 +63,7 @@ describe('PositionMonitor', () => {
   it('sets debankMsUsdPrice to null when msUSD address not in supply tokens', async () => {
     vi.mocked(mockDeBank.getUserProtocolPosition).mockResolvedValueOnce({
       netUsdValue: 0, assetUsdValue: 0, debtUsdValue: 0,
-      rewardUsdValue: 0, supplyTokenPrices: {},
+      rewardUsdValue: 0, supplyTokenPrices: {}, supplyTokens: [],
       fetchedAt: new Date(),
     })
     const m = new PositionMonitor(baseCfg, mockDeBank, makeHistoryStore())

@@ -24,6 +24,7 @@ export enum AlertType {
   LIQUIDITY_DRAIN = 'liquidity_drain',
   INSIDER_EXIT = 'insider_exit',
   POSITION_DROP = 'position_drop',
+  POSITION_OUT_OF_RANGE = 'position_out_of_range',
   DATA_SOURCE_FAILURE = 'data_source_failure',
   WITHDRAWAL_ABORTED = 'withdrawal_aborted',
 }

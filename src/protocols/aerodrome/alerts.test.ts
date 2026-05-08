@@ -14,6 +14,7 @@ const cfg = {
     liquidityDrain: { tvlDropPct: 30, tvlWindowSeconds: 3600, poolMsUsdRatioPct: 70, sellsBuysRatio: 3 },
     insiderExit: { largeOutflowUsd: 50000, priceDropPct: 1 },
     positionDrop: { dropPct: 10, windowSeconds: 3600, sustainedSeconds: 300, requiredConfirmations: 1 },
+    positionOutOfRange: { minTokenSharePct: 5, sustainedSeconds: 300, cooldownSeconds: 86400 },
   },
 } as AerodromeConfig
 
@@ -59,12 +60,23 @@ function makePool(overrides: Partial<PoolSignal> = {}): PoolSignal {
   }
 }
 
+function makePosition(overrides: Partial<{ netUsdValue: number; rewardUsdValue: number; debankMsUsdPrice: number | null; supplyTokens: Array<{ id: string; symbol: string; amount: number; priceUsd: number; usdValue: number }> }> = {}) {
+  return {
+    netUsdValue: 18_000,
+    rewardUsdValue: 100,
+    debankMsUsdPrice: 1.0001 as number | null,
+    supplyTokens: [] as Array<{ id: string; symbol: string; amount: number; priceUsd: number; usdValue: number }>,
+    fetchedAt: new Date(),
+    ...overrides,
+  }
+}
+
 function makeSignals(overrides: Partial<AllSignals> = {}): AllSignals {
   return {
     price: { coingecko: 1.0001, twap: 1.0001, fetchedAt: new Date() },
     pool: makePool(),
     supply: { totalSupply: 1_000_000n * 10n ** 18n, fetchedAt: new Date() },
-    position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
+    position: makePosition(),
     protocol: { tvlUsd: 55_000_000, fetchedAt: new Date() },
     wallets: [],
     ...overrides,
@@ -122,7 +134,7 @@ describe('evaluateAlerts — depeg', () => {
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: null, fetchedAt: new Date() },
       pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
-      position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: null, fetchedAt: new Date() },
+      position: makePosition({ debankMsUsdPrice: null }),
     })
     const alerts = evaluate(state, signals)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -140,7 +152,7 @@ describe('evaluateAlerts — depeg', () => {
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
       pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
-      position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
+      position: makePosition({ debankMsUsdPrice: 0.988 }),
     })
     evaluate(state, signals)
     expect(state.get(AlertType.DEPEG)?.confirmations.has('debank')).toBe(true)
@@ -151,7 +163,7 @@ describe('evaluateAlerts — depeg', () => {
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: 0.987, fetchedAt: new Date() },
       pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
-      position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 0.988, fetchedAt: new Date() },
+      position: makePosition({ debankMsUsdPrice: 0.988 }),
     })
     const alerts = evaluate(state, signals)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -164,7 +176,7 @@ describe('evaluateAlerts — depeg', () => {
     const signals = makeSignals({
       price: { coingecko: 0.985, twap: null, fetchedAt: new Date() },
       pool: makePool({ msUsdRatio: 0.78, poolPriceUsd: 0.985, buys1h: 20, sells1h: 100 }),
-      position: { netUsdValue: 18_000, rewardUsdValue: 100, debankMsUsdPrice: 1.001, fetchedAt: new Date() },
+      position: makePosition({ debankMsUsdPrice: 1.001 }),
     })
     const alerts = evaluate(state, signals)
     const depeg = alerts.find(a => a.type === AlertType.DEPEG)
@@ -329,7 +341,7 @@ describe('evaluateAlerts — position_drop', () => {
     const state = stateWithAge(AlertType.POSITION_DROP, 6 * 60 * 1000, ['position'])
     const store = makeHistoryStub({ position: [[oneHourAgo, 18_000]] })
     const signals = makeSignals({
-      position: { netUsdValue: 15_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() }, // -16.7%
+      position: makePosition({ netUsdValue: 15_000 }), // -16.7%
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.POSITION_DROP)
@@ -340,7 +352,7 @@ describe('evaluateAlerts — position_drop', () => {
     const state = stateWithAge(AlertType.POSITION_DROP, 60 * 1000, ['position'])
     const store = makeHistoryStub({ position: [[oneHourAgo, 18_000]] })
     const signals = makeSignals({
-      position: { netUsdValue: 15_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
+      position: makePosition({ netUsdValue: 15_000 }),
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.POSITION_DROP)
@@ -351,7 +363,7 @@ describe('evaluateAlerts — position_drop', () => {
     const state = new Map()
     const store = makeHistoryStub({})
     const signals = makeSignals({
-      position: { netUsdValue: 10_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
+      position: makePosition({ netUsdValue: 10_000 }),
     })
     evaluate(state, signals, store)
     expect(state.has(AlertType.POSITION_DROP)).toBe(false)
@@ -367,11 +379,105 @@ describe('evaluateAlerts — position_drop', () => {
     const state = stateWithAge(AlertType.POSITION_DROP, 6 * 60 * 1000, ['position'])
     const store = makeHistoryStub({ position: [[oneHourAgo, 18_000]] })
     const signals = makeSignals({
-      position: { netUsdValue: 15_000, rewardUsdValue: 100, debankMsUsdPrice: 1.0001, fetchedAt: new Date() },
+      position: makePosition({ netUsdValue: 15_000 }),
     })
     const alerts = evaluate(state, signals, store)
     const alert = alerts.find(a => a.type === AlertType.POSITION_DROP)
     expect(alert?.data['windowSeconds']).toBe(3600)
     expect(alert?.data['baselineValue_usd']).toBe(18_000)
+  })
+})
+
+// ── POSITION OUT OF RANGE ─────────────────────────────────────────────────────
+
+describe('evaluateAlerts — position_out_of_range', () => {
+  const msUSD = (amount: number, price = 0.998) => ({
+    id: '0x526728dbc96689597f85ae4cd716d4f7fccbae9d',
+    symbol: 'msUSD',
+    amount,
+    priceUsd: price,
+    usdValue: amount * price,
+  })
+  const usdc = (amount: number) => ({
+    id: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+    symbol: 'USDC',
+    amount,
+    priceUsd: 1.0,
+    usdValue: amount,
+  })
+
+  it('no alert when tokens are balanced (50/50)', () => {
+    const state = new Map()
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(10_000), usdc(10_000)] }) })
+    const alerts = evaluate(state, signals)
+    expect(alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)).toBeUndefined()
+    expect(state.has(AlertType.POSITION_OUT_OF_RANGE)).toBe(false)
+  })
+
+  it('no alert when minority share is above threshold (32/68)', () => {
+    const state = new Map()
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(5924, 0.998), usdc(12603)] }) })
+    const alerts = evaluate(state, signals)
+    expect(alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)).toBeUndefined()
+  })
+
+  it('starts timer but returns no alert on first detection (below sustainedSeconds)', () => {
+    const state = new Map()
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(300, 0.998), usdc(10_000)] }) })
+    const alerts = evaluate(state, signals)
+    expect(alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)).toBeUndefined()
+    expect(state.has(AlertType.POSITION_OUT_OF_RANGE)).toBe(true)
+  })
+
+  it('returns WARNING after sustained > 300s', () => {
+    const state = new Map()
+    state.set(AlertType.POSITION_OUT_OF_RANGE, {
+      firstTriggered: new Date(Date.now() - 310_000),
+      confirmations: new Set(['range']),
+      lastData: { minShare: 3, shares: [], lastNotifiedAt: 0 },
+    })
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(300, 0.998), usdc(10_000)] }) })
+    const alerts = evaluate(state, signals)
+    const alert = alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)
+    expect(alert?.level).toBe(AlertLevel.WARNING)
+    expect(alert?.title).toContain('Manual Rebalance Required')
+  })
+
+  it('suppresses repeated alerts within cooldown window (24h)', () => {
+    const lastNotifiedAt = Date.now() - 1000  // notified 1 second ago
+    const state = new Map()
+    state.set(AlertType.POSITION_OUT_OF_RANGE, {
+      firstTriggered: new Date(Date.now() - 310_000),
+      confirmations: new Set(['range']),
+      lastData: { minShare: 3, shares: [], lastNotifiedAt },
+    })
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(300, 0.998), usdc(10_000)] }) })
+    const alerts = evaluate(state, signals)
+    expect(alerts.find(a => a.type === AlertType.POSITION_OUT_OF_RANGE)).toBeUndefined()
+  })
+
+  it('clears state when position returns in-range', () => {
+    const state = new Map()
+    state.set(AlertType.POSITION_OUT_OF_RANGE, {
+      firstTriggered: new Date(Date.now() - 310_000),
+      confirmations: new Set(['range']),
+      lastData: { minShare: 3, shares: [], lastNotifiedAt: 0 },
+    })
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [msUSD(10_000), usdc(10_000)] }) })
+    evaluate(state, signals)
+    expect(state.has(AlertType.POSITION_OUT_OF_RANGE)).toBe(false)
+  })
+
+  it('no alert when position is null', () => {
+    const state = new Map()
+    evaluate(state, makeSignals({ position: null }))
+    expect(state.has(AlertType.POSITION_OUT_OF_RANGE)).toBe(false)
+  })
+
+  it('no alert when supplyTokens has fewer than 2 tokens', () => {
+    const state = new Map()
+    const signals = makeSignals({ position: makePosition({ supplyTokens: [usdc(10_000)] }) })
+    evaluate(state, signals)
+    expect(state.has(AlertType.POSITION_OUT_OF_RANGE)).toBe(false)
   })
 })

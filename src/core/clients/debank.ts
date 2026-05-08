@@ -10,12 +10,21 @@ export interface DeBankConfig {
   retryAttempts: number
 }
 
+export interface SupplyToken {
+  id: string
+  symbol: string
+  amount: number
+  priceUsd: number
+  usdValue: number
+}
+
 export interface UserProtocolPosition {
   netUsdValue: number
   assetUsdValue: number
   debtUsdValue: number
   rewardUsdValue: number
   supplyTokenPrices: Record<string, number>
+  supplyTokens: SupplyToken[]
   fetchedAt: Date
 }
 
@@ -47,7 +56,7 @@ export class DeBankClient {
         pool?: { id?: string }
         stats: { net_usd_value: number; asset_usd_value: number; debt_usd_value: number }
         detail?: {
-          supply_token_list?: Array<{ id: string; price: number }>
+          supply_token_list?: Array<{ id: string; symbol?: string; price: number; amount: number }>
           reward_token_list?: Array<{ amount: number; price: number }>
         }
       }>
@@ -58,17 +67,28 @@ export class DeBankClient {
         const rewardUsdValue = item.detail?.reward_token_list?.reduce(
           (s, t) => s + t.amount * t.price, 0,
         ) ?? 0
-        const supplyTokenPrices = Object.fromEntries(
-          item.detail?.supply_token_list?.map(t => [t.id.toLowerCase(), t.price]) ?? [],
-        )
+        const newPrices: Record<string, number> = {}
+        const tokenMap = new Map(acc.supplyTokens.map(tk => [tk.id, { ...tk }]))
+        for (const t of item.detail?.supply_token_list ?? []) {
+          const id = t.id.toLowerCase()
+          newPrices[id] = t.price
+          const existing = tokenMap.get(id)
+          if (existing) {
+            tokenMap.set(id, { ...existing, amount: existing.amount + t.amount, usdValue: existing.usdValue + t.amount * t.price })
+          } else {
+            tokenMap.set(id, { id, symbol: t.symbol ?? t.id, amount: t.amount, priceUsd: t.price, usdValue: t.amount * t.price })
+          }
+        }
+        const mergedTokens = [...tokenMap.values()]
         return {
           netUsdValue: acc.netUsdValue + (item.stats.net_usd_value ?? 0),
           assetUsdValue: acc.assetUsdValue + (item.stats.asset_usd_value ?? 0),
           debtUsdValue: acc.debtUsdValue + (item.stats.debt_usd_value ?? 0),
           rewardUsdValue: acc.rewardUsdValue + rewardUsdValue,
-          supplyTokenPrices: { ...acc.supplyTokenPrices, ...supplyTokenPrices },
+          supplyTokenPrices: { ...acc.supplyTokenPrices, ...newPrices },
+          supplyTokens: mergedTokens,
         }
-      }, { netUsdValue: 0, assetUsdValue: 0, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {} as Record<string, number> })
+      }, { netUsdValue: 0, assetUsdValue: 0, debtUsdValue: 0, rewardUsdValue: 0, supplyTokenPrices: {} as Record<string, number>, supplyTokens: [] as SupplyToken[] })
       return { ...total, fetchedAt: new Date() }
     })
   }
